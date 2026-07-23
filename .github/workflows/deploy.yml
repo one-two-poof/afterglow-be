@@ -58,7 +58,17 @@ jobs:
             set -e
             mv /opt/afterglow/afterglow-be.jar.new /opt/afterglow/afterglow-be.jar
             sudo systemctl restart afterglow
-            sleep 8
             sudo systemctl is-active afterglow
-            curl -sf http://127.0.0.1:8080/api/health
+            for i in $(seq 1 30); do
+              if curl -sf http://127.0.0.1:8080/api/health; then
+                echo
+                echo "Health check OK"
+                exit 0
+              fi
+              echo "Waiting for app... ($i/30)"
+              sleep 3
+            done
+            echo "Health check failed"
+            sudo journalctl -u afterglow -n 50 --no-pager
+            exit 1
           '
