@@ -1,0 +1,14 @@
+.gradle/
+build/
+.idea/
+*.iml
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# 로컬 시크릿 (Notion / Google / 공공데이터 키 등)
+src/main/resources/application-local.properties
+
+# OS
+.DS_Store
+Thumbs.db
