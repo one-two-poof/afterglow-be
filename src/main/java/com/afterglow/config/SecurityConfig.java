@@ -51,7 +51,11 @@ public class SecurityConfig {
                     "/api/auth/login/google",
                     "/oauth2/**",
                     "/login/**",
-                    "/h2-console/**"
+                    "/h2-console/**",
+                    "/swagger-ui/**",
+                    "/swagger-ui.html",
+                    "/v3/api-docs/**",
+                    "/v3/api-docs.yaml"
                 ).permitAll()
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
