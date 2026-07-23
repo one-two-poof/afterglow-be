@@ -1,0 +1,16 @@
+[Unit]
+Description=Afterglow Spring Boot Backend
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/afterglow
+EnvironmentFile=/opt/afterglow/afterglow.env
+ExecStart=/usr/bin/java -jar /opt/afterglow/afterglow-be.jar
+SuccessExitStatus=143
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
