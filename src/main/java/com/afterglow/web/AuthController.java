@@ -5,7 +5,8 @@ import com.afterglow.domain.User;
 import com.afterglow.repository.UserRepository;
 import com.afterglow.web.dto.AuthResponse;
 import com.afterglow.web.dto.UserResponse;
-import java.util.Map;
+import java.net.URI;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,15 +25,12 @@ public class AuthController {
         this.jwtProperties = jwtProperties;
     }
 
-    /**
-     * 구글 로그인 진입점 안내.
-     * 실제 리다이렉트는 Spring Security가 자동 처리 (/oauth2/authorization/google).
-     */
+    /** 구글 로그인 진입점. Spring Security의 OAuth2 인증 시작 경로로 리다이렉트한다. */
     @GetMapping("/login/google")
-    public ResponseEntity<Map<String, String>> loginGuide() {
-        return ResponseEntity.ok(Map.of(
-                "loginUrl", "/oauth2/authorization/google",
-                "description", "이 URL로 이동하면 Google 로그인이 시작됩니다."));
+    public ResponseEntity<Void> loginGoogle() {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create("/oauth2/authorization/google"))
+                .build();
     }
 
     /** JWT가 있는 사용자의 내 정보 조회 */
