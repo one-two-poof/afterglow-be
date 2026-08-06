@@ -55,7 +55,13 @@ public class SecurityConfig {
                     "/swagger-ui/**",
                     "/swagger-ui.html",
                     "/v3/api-docs/**",
-                    "/v3/api-docs.yaml"
+                    "/v3/api-docs.yaml",
+                    "/error",
+                    // 그늘길 라우팅 프로토타입 (batch/src/main.py + shaderoute 패키지) — DB 없는 공개 프로토타입
+                    "/",
+                    "/index.html",
+                    "/api/route",
+                    "/api/buildings"
                 ).permitAll()
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
