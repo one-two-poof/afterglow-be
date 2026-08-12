@@ -61,8 +61,7 @@ public class SecurityConfig {
                     "/",
                     "/index.html",
                     "/api/route",
-                    // buildings.pmtiles를 정적 리소스로 서빙 (static/data/buildings.pmtiles)
-                    "/data/**"
+                    "/api/buildings"
                 ).permitAll()
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()

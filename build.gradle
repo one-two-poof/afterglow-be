@@ -33,9 +33,6 @@ dependencies {
     runtimeOnly 'com.h2database:h2'
     runtimeOnly 'org.postgresql:postgresql'
 
-    // 그늘길 라우팅용 노드 최근접 탐색 (KdTree) -- ShadeGraph.nearestNode()
-    implementation 'org.locationtech.jts:jts-core:1.20.0'
-
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
 }
