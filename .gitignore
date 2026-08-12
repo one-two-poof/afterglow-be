@@ -13,3 +13,12 @@ deploy/afterglow.env
 # OS
 .DS_Store
 Thumbs.db
+
+# 그늘길 라우팅 배치 산출물 / 원본 데이터 (EC2에 별도 배치, 리포에는 미포함)
+# 주의: 앞의 '/'로 리포 루트에만 앵커링 — 없으면 src/.../static/data/ 처럼
+# 이름이 같은 다른 디렉터리까지 전부 무시돼버린다.
+/data/
+/cache/
+batch/cache/
+batch/debug/
+batch/src/__pycache__/
