@@ -7,10 +7,12 @@ import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -67,6 +69,12 @@ public class SecurityConfig {
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
             )
+            // oauth2Login 기본 진입점은 미인증 요청을 구글 로그인으로 302 리다이렉트시킴.
+            // API(fetch) 클라이언트는 리다이렉트를 못 알아채므로, 인증 안 된 API 호출엔
+            // 항상 401 JSON을 내려주도록 오버라이드.
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(unauthorizedJsonEntryPoint())
+            )
             .oauth2Login(oauth2 -> oauth2
                 .successHandler(oAuth2SuccessHandler)
             )
@@ -77,6 +85,15 @@ public class SecurityConfig {
                 headers.frameOptions(frame -> frame.sameOrigin()));
 
         return http.build();
+    }
+
+    @Bean
+    public AuthenticationEntryPoint unauthorizedJsonEntryPoint() {
+        return (request, response, authException) -> {
+            response.setStatus(401);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.getWriter().write("{\"error\":\"authentication required\"}");
+        };
     }
 
     @Bean
