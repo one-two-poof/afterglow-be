@@ -1,29 +1,38 @@
 package com.afterglow.web.dto;
 
-import com.afterglow.domain.ContentItem;
-import com.afterglow.util.JsonHelper;
+import com.afterglow.domain.Hospital;
+import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Map;
 
 public record HospitalResponse(
         Long id,
-        String notionPageId,
-        String name,
-        String status,
-        Map<String, String> properties,
-        Instant notionLastEditedAt,
-        Instant syncedAt,
-        boolean archived) {
+        String placeId,
+        String tourismContentId,
+        String placeName,
+        String categoryName,
+        String addressName,
+        String roadAddressName,
+        BigDecimal mapX,
+        BigDecimal mapY,
+        String image,
+        String source,
+        boolean imageOverridden,
+        Instant syncedAt) {
 
-    public static HospitalResponse from(ContentItem item, JsonHelper jsonHelper) {
+    public static HospitalResponse from(Hospital hospital) {
         return new HospitalResponse(
-                item.getId(),
-                item.getNotionPageId(),
-                item.getTitle(),
-                item.getStatus(),
-                jsonHelper.fromJson(item.getPropertiesJson()),
-                item.getNotionLastEditedAt(),
-                item.getSyncedAt(),
-                item.isArchived());
+                hospital.getId(),
+                hospital.getPlaceId(),
+                hospital.getTourismContentId(),
+                hospital.getPlaceName(),
+                hospital.getCategoryName(),
+                hospital.getAddressName(),
+                hospital.getRoadAddressName(),
+                hospital.getMapX(),
+                hospital.getMapY(),
+                hospital.getImageUrl(),
+                hospital.getSource(),
+                hospital.isImageUrlOverridden(),
+                hospital.getSyncedAt());
     }
 }

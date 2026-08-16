@@ -47,7 +47,6 @@ public class SecurityConfig {
                 // 공개 API
                 .requestMatchers(
                     "/api/health",
-                    "/api/hospitals",
                     "/api/items/**",
                     "/api/medical-tourism/**",
                     "/api/auth/login/google",
@@ -64,8 +63,12 @@ public class SecurityConfig {
                     "/index.html",
                     "/api/route",
                     // buildings.pmtiles를 정적 리소스로 서빙 (static/data/buildings.pmtiles)
-                    "/data/**"
+                    "/data/**",
+                    // 병원/장소 관리 페이지 (정적 리소스 자체는 공개, 안의 쓰기 API 호출은 JWT로 인증)
+                    "/admin/**"
                 ).permitAll()
+                // 병원/장소 조회는 공개, 생성·수정·삭제는 로그인 필요
+                .requestMatchers(HttpMethod.GET, "/api/hospitals", "/api/hospitals/**").permitAll()
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
             )

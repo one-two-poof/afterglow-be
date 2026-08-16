@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>병원/장소 관리</title>
+<style>
+  :root {
+    --bg: #f6f7fa;
+    --surface: #ffffff;
+    --ink: #1b2233;
+    --muted: #5b6472;
+    --border: #e2e5ec;
+    --accent: #3e63dd;
+    --accent-soft: #eef1fe;
+    --danger: #d1414a;
+    --danger-soft: #fdecee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", "Pretendard Variable", Pretendard, sans-serif;
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+
+  .token-bar {
+    display: flex; gap: 8px; align-items: center;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .token-bar label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .token-bar input {
+    flex: 1; min-width: 240px; padding: 7px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px;
+  }
+  .token-status { font-size: 12px; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+  .token-status.ok { color: #1e9e6b; background: #e7f7ef; }
+  .token-status.missing { color: var(--danger); background: var(--danger-soft); }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .count { font-size: 13px; color: var(--muted); }
+  button {
+    font-family: inherit; font-size: 13px; cursor: pointer; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+    padding: 7px 14px;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.danger { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { background: var(--accent-soft); color: var(--accent); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  td.actions { white-space: nowrap; display: flex; gap: 6px; }
+  .empty { padding: 32px; text-align: center; color: var(--muted); }
+  .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 12px; padding: 24px; width: 480px; max-width: 92vw;
+    max-height: 88vh; overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .error-msg { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
+
+  .gate-backdrop {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; z-index: 20;
+  }
+  .gate-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 28px; width: 320px; max-width: 90vw; text-align: center;
+  }
+  .gate-box h2 { margin: 0 0 4px; font-size: 16px; }
+  .gate-box p { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
+  .gate-box input {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 14px; font-family: inherit; text-align: center; margin-bottom: 10px;
+  }
+  .gate-box button { width: 100%; }
+  .gate-error { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
+  body.locked > *:not(.gate-backdrop) { display: none !important; }
+</style>
+</head>
+<body class="locked">
+
+<div class="gate-backdrop" id="gate-backdrop">
+  <div class="gate-box">
+    <h2>병원/장소 관리</h2>
+    <p>아이디를 입력하세요</p>
+    <form id="gate-form">
+      <input id="gate-id-input" type="text" placeholder="아이디" autocomplete="off" autofocus>
+      <button type="submit" class="primary">입장</button>
+      <div class="gate-error" id="gate-error"></div>
+    </form>
+  </div>
+</div>
+
+<h1>병원/장소 관리</h1>
+<p class="subtitle">/api/hospitals — 조회는 공개, 추가·수정·삭제는 로그인(JWT) 필요</p>
+
+<div class="token-bar">
+  <label for="token-input">JWT 토큰</label>
+  <input id="token-input" type="password" placeholder="Bearer 토큰 (Authorization 헤더에 사용)">
+  <button id="token-save">저장</button>
+  <span id="token-status" class="token-status missing">토큰 없음 (조회만 가능)</span>
+</div>
+
+<div class="toolbar">
+  <span id="count" class="count">불러오는 중...</span>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <input id="search-input" type="text" placeholder="이름으로 검색" style="padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:inherit; min-width:200px;">
+    <button id="search-btn">검색</button>
+    <button id="search-clear-btn" style="display:none;">전체보기</button>
+    <button class="primary" id="add-btn">+ 새 장소 추가</button>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>이름</th>
+      <th>카테고리</th>
+      <th>기본 주소</th>
+      <th>도로명 주소</th>
+      <th>위도(mapY)</th>
+      <th>경도(mapX)</th>
+      <th>이미지</th>
+      <th>출처</th>
+      <th>마지막 동기화</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<div id="empty" class="empty" style="display:none;">등록된 장소가 없습니다.</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <h2 id="modal-title">새 장소 추가</h2>
+    <form id="hospital-form">
+      <div class="field"><label>place_id (카카오 고유 ID)</label><input name="placeId" required></div>
+      <div class="field"><label>장소명 *</label><input name="placeName" required></div>
+      <div class="field"><label>카테고리</label><input name="categoryName" placeholder="문화,예술 > 영화 > CGV"></div>
+      <div class="field"><label>기본 주소</label><input name="addressName"></div>
+      <div class="field"><label>도로명 주소</label><input name="roadAddressName"></div>
+      <div class="field"><label>위도 (mapY) *</label><input name="mapY" type="number" step="any" required></div>
+      <div class="field"><label>경도 (mapX) *</label><input name="mapX" type="number" step="any" required></div>
+      <div class="field"><label>이미지 URL</label><input name="image"></div>
+      <div class="error-msg" id="form-error"></div>
+      <div class="modal-actions">
+        <button type="button" id="cancel-btn">취소</button>
+        <button type="submit" class="primary" id="submit-btn">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const ADMIN_ID = 'dunaduneo';
+  const gateBackdrop = document.getElementById('gate-backdrop');
+  const gateForm = document.getElementById('gate-form');
+  const gateIdInput = document.getElementById('gate-id-input');
+  const gateError = document.getElementById('gate-error');
+
+  function isUnlocked() {
+    return localStorage.getItem('afterglow_admin_id') === ADMIN_ID;
+  }
+
+  function unlock() {
+    document.body.classList.remove('locked');
+    gateBackdrop.style.display = 'none';
+  }
+
+  gateForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (gateIdInput.value.trim() === ADMIN_ID) {
+      localStorage.setItem('afterglow_admin_id', ADMIN_ID);
+      unlock();
+    } else {
+      gateError.textContent = '아이디가 올바르지 않습니다.';
+    }
+  });
+
+  if (isUnlocked()) {
+    unlock();
+  }
+
+  const API_BASE = '/api/hospitals';
+  const tokenInput = document.getElementById('token-input');
+  const tokenStatus = document.getElementById('token-status');
+  const rowsEl = document.getElementById('rows');
+  const emptyEl = document.getElementById('empty');
+  const countEl = document.getElementById('count');
+  const modalBackdrop = document.getElementById('modal-backdrop');
+  const modalTitle = document.getElementById('modal-title');
+  const form = document.getElementById('hospital-form');
+  const formError = document.getElementById('form-error');
+
+  let editingId = null;
+
+  function getToken() {
+    return localStorage.getItem('afterglow_admin_jwt') || '';
+  }
+
+  function refreshTokenStatus() {
+    const token = getToken();
+    tokenInput.value = token;
+    if (token) {
+      tokenStatus.textContent = '토큰 설정됨 (쓰기 가능)';
+      tokenStatus.className = 'token-status ok';
+    } else {
+      tokenStatus.textContent = '토큰 없음 (조회만 가능)';
+      tokenStatus.className = 'token-status missing';
+    }
+  }
+
+  document.getElementById('token-save').addEventListener('click', () => {
+    localStorage.setItem('afterglow_admin_jwt', tokenInput.value.trim());
+    refreshTokenStatus();
+  });
+
+  function authHeaders() {
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+  }
+
+  async function loadHospitals(name) {
+    countEl.textContent = '불러오는 중...';
+    const url = name ? `${API_BASE}?name=${encodeURIComponent(name)}` : API_BASE;
+    const res = await fetch(url);
+    if (!res.ok) {
+      countEl.textContent = '목록을 불러오지 못했습니다 (HTTP ' + res.status + ')';
+      return;
+    }
+    const items = await res.json();
+    renderRows(items);
+    countEl.textContent = items.length + '개' + (name ? ` ("${name}" 검색 결과)` : '');
+  }
+
+  const searchInput = document.getElementById('search-input');
+  const searchClearBtn = document.getElementById('search-clear-btn');
+
+  function runSearch() {
+    const term = searchInput.value.trim();
+    searchClearBtn.style.display = term ? 'inline-block' : 'none';
+    loadHospitals(term);
+  }
+
+  document.getElementById('search-btn').addEventListener('click', runSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runSearch();
+  });
+  searchClearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClearBtn.style.display = 'none';
+    loadHospitals();
+  });
+
+  function renderRows(items) {
+    rowsEl.innerHTML = '';
+    emptyEl.style.display = items.length === 0 ? 'block' : 'none';
+    for (const item of items) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.id}</td>
+        <td><strong>${escapeHtml(item.placeName)}</strong></td>
+        <td>${escapeHtml(item.categoryName || '')}</td>
+        <td>${escapeHtml(item.addressName || '')}</td>
+        <td>${escapeHtml(item.roadAddressName || '')}</td>
+        <td>${item.mapY ?? ''}</td>
+        <td>${item.mapX ?? ''}</td>
+        <td>${item.image ? `<a href="${escapeAttr(item.image)}" target="_blank" rel="noopener">보기</a>` : '-'}${item.imageOverridden ? ' <span class="badge">수동</span>' : ''}</td>
+        <td>${escapeHtml(item.source || '')}</td>
+        <td>${item.syncedAt ? new Date(item.syncedAt).toLocaleString('ko-KR') : ''}</td>
+        <td class="actions">
+          <button data-action="edit" data-id="${item.id}">수정</button>
+          <button data-action="delete" data-id="${item.id}" class="danger">삭제</button>
+        </td>
+      `;
+      rowsEl.appendChild(tr);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function escapeAttr(s) {
+    return String(s).replace(/"/g, '&quot;');
+  }
+
+  rowsEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.action === 'delete') {
+      if (!confirm('정말 삭제하시겠습니까? (id=' + id + ')')) return;
+      const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (res.status === 401 || res.status === 403) {
+        alert('삭제 권한이 없습니다. JWT 토큰을 확인해주세요.');
+        return;
+      }
+      if (!res.ok && res.status !== 204) {
+        alert('삭제 실패 (HTTP ' + res.status + ')');
+        return;
+      }
+      loadHospitals(searchInput.value.trim());
+    } else if (btn.dataset.action === 'edit') {
+      const res = await fetch(`${API_BASE}/${id}`);
+      if (!res.ok) { alert('불러오기 실패'); return; }
+      const item = await res.json();
+      openModal(item);
+    }
+  });
+
+  document.getElementById('add-btn').addEventListener('click', () => openModal(null));
+  document.getElementById('cancel-btn').addEventListener('click', closeModal);
+  modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
+
+  function openModal(item) {
+    formError.textContent = '';
+    editingId = item ? item.id : null;
+    modalTitle.textContent = item ? `장소 수정 (id=${item.id})` : '새 장소 추가';
+    form.placeId.value = item?.placeId || '';
+    form.placeId.disabled = !!item; // place_id는 수정 시 변경 불가 (매칭 키)
+    form.placeName.value = item?.placeName || '';
+    form.categoryName.value = item?.categoryName || '';
+    form.addressName.value = item?.addressName || '';
+    form.roadAddressName.value = item?.roadAddressName || '';
+    form.mapY.value = item?.mapY ?? '';
+    form.mapX.value = item?.mapX ?? '';
+    form.image.value = item?.image || '';
+    modalBackdrop.classList.add('open');
+  }
+
+  function closeModal() {
+    modalBackdrop.classList.remove('open');
+    form.reset();
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    formError.textContent = '';
+    if (!getToken()) {
+      formError.textContent = '먼저 상단에 JWT 토큰을 입력·저장해주세요.';
+      return;
+    }
+    const payload = {
+      placeId: form.placeId.value.trim(),
+      placeName: form.placeName.value.trim(),
+      categoryName: form.categoryName.value.trim() || null,
+      addressName: form.addressName.value.trim() || null,
+      roadAddressName: form.roadAddressName.value.trim() || null,
+      mapY: parseFloat(form.mapY.value),
+      mapX: parseFloat(form.mapX.value),
+      image: form.image.value.trim() || null,
+    };
+    const url = editingId ? `${API_BASE}/${editingId}` : API_BASE;
+    const method = editingId ? 'PUT' : 'POST';
+    const res = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(payload) });
+    if (res.status === 401 || res.status === 403) {
+      formError.textContent = '권한이 없습니다. JWT 토큰을 확인해주세요.';
+      return;
+    }
+    if (!res.ok) {
+      formError.textContent = '저장 실패 (HTTP ' + res.status + ')';
+      return;
+    }
+    closeModal();
+    loadHospitals(searchInput.value.trim());
+  });
+
+  refreshTokenStatus();
+  loadHospitals();
+</script>
+</body>
+</html>
