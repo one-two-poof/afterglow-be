@@ -5,6 +5,9 @@
 - 앱 경로: `/opt/afterglow/afterglow-be.jar`
 - 환경변수: `/opt/afterglow/afterglow.env` (**Git에 올리지 않음**)
 - systemd: `afterglow.service`
+- DB: RDS PostgreSQL (`afterglow-db`, ap-northeast-2, db.t4g.micro, 20GB gp3, 단일 AZ).
+  같은 VPC(`vpc-07890615839daff50`) 내부 전용이며 퍼블릭 접근은 막혀 있고,
+  `afterglow-be-sg`(앱 EC2)에서만 5432 인바운드 허용. 스키마는 `ddl-auto=update`로 앱이 자동 생성.
 
 ## GitHub Actions Secrets
 
