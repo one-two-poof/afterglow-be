@@ -18,7 +18,8 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Afterglow API")
-                        .description("Notion 동기화 · 의료관광 · Google 로그인 API")
+                        .description("Google 로그인 · 장소(병원/숙소/관광명소) · 추천 코스 · 그늘길 라우팅 · "
+                                + "Notion 동기화 · 의료관광 API")
                         .version("v1"))
                 .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))
                 .components(new Components()

@@ -7,6 +7,8 @@ import com.afterglow.shaderoute.route.dto.RouteLegResult;
 import com.afterglow.shaderoute.route.dto.RouteRequest;
 import com.afterglow.shaderoute.route.dto.RouteResponse;
 import com.afterglow.shaderoute.route.dto.SnappedPoint;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,6 +31,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
+@Tag(name = "Route", description = "그늘길 라우팅 프로토타입: 두 지점 사이 최단 경로와 그늘 우선 경로를 계산. DB 없는 공개 프로토타입, 인증 불필요")
 public class RouteController {
 
     private static final Logger log = LoggerFactory.getLogger(RouteController.class);
@@ -42,6 +45,11 @@ public class RouteController {
         this.routeService = routeService;
     }
 
+    @Operation(
+            summary = "그늘길 경로 계산",
+            description = "출발/도착 좌표와 시각(at, ISO8601)을 받아 각각 가장 가까운 그래프 노드에 스냅한 뒤, "
+                    + "최단 거리 경로와 해가림(그늘) 우선 경로 2가지를 함께 반환한다. "
+                    + "batch/src/main.py로 미리 계산해둔 그래프·태양 위치 데이터를 기반으로 동작.")
     @PostMapping("/route")
     public RouteResponse route(@RequestBody RouteRequest request) {
         LatLon from = request.from();
