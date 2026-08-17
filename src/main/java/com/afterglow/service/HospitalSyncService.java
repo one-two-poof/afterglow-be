@@ -1,17 +1,20 @@
 package com.afterglow.service;
 
-import com.afterglow.domain.Hospital;
+import com.afterglow.domain.Place;
 import com.afterglow.kakao.KakaoPlace;
 import com.afterglow.kakao.KakaoPlaceClient;
 import com.afterglow.kakao.SeoulDistricts;
-import com.afterglow.repository.HospitalRepository;
+import com.afterglow.repository.PlaceRepository;
 import com.afterglow.web.dto.MedicalTourismListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -19,14 +22,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리)를 조합해 {@link Hospital} 테이블을 채운다.
+ * 관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리)를 조합해 {@link Place} 테이블을 채운다.
+ * 범위는 강남구/서초구로 고정 (data/raw/ml_data의 CSV 백필과 같은 범위).
  *
- * <p>두 단계로 나뉜다.
+ * <p>세 단계로 나뉜다.
  * <ol>
+ *   <li>0단계: 강남구/서초구 밖 주소를 가진 기존 행을 정리한다(과거 서울 전체 동기화로
+ *       들어온 데이터를 이 범위로 되돌리기 위함).</li>
  *   <li>1단계: 관광공사 목록을 순회하며 각 항목을 카카오에서 검색.
  *       매칭되면 source=TOURISM_API+KAKAO, 안 되면 관광공사 원본 데이터만으로
- *       source=TOURISM_API로 저장한다(이전에는 이 경우 그냥 버렸음).</li>
- *   <li>2단계: 관광공사 목록과 무관하게 서울 25개 구를 중심으로 카카오 병원 카테고리를
+ *       source=TOURISM_API로 저장한다.</li>
+ *   <li>2단계: 관광공사 목록과 무관하게 강남구/서초구를 중심으로 카카오 병원 카테고리를
  *       전부 스윕해서, 1단계에서 이미 들어간 것과 겹치지 않는 새 병원을 source=KAKAO로 추가한다.</li>
  * </ol>
  */
@@ -42,34 +48,38 @@ public class HospitalSyncService {
     // 카카오 검색은 한글 상호명 기준이라, 관광공사 기본 언어(ENG)가 아니라 한글로 명시 요청한다.
     private static final String KOREAN_LANG = "KOR";
     private static final int DISTRICT_SWEEP_RADIUS_M = 5000;
+    private static final List<String> IN_SCOPE_ADDRESS_PREFIXES = List.of("서울 강남구", "서울 서초구");
 
     private final MedicalTourismService medicalTourismService;
     private final KakaoPlaceClient kakaoPlaceClient;
-    private final HospitalRepository hospitalRepository;
+    private final PlaceRepository placeRepository;
 
     public HospitalSyncService(
             MedicalTourismService medicalTourismService,
             KakaoPlaceClient kakaoPlaceClient,
-            HospitalRepository hospitalRepository) {
+            PlaceRepository placeRepository) {
         this.medicalTourismService = medicalTourismService;
         this.kakaoPlaceClient = kakaoPlaceClient;
-        this.hospitalRepository = hospitalRepository;
+        this.placeRepository = placeRepository;
     }
 
     @Transactional
     public SyncResult sync() {
         Instant syncedAt = Instant.now();
 
-        TourismPhaseResult tourismPhase = syncFromTourismApi(syncedAt);
+        List<MedicalTourismListItem> tourismItems = medicalTourismService.listAllGangnamSeocho(KOREAN_LANG);
+        int pruned = pruneOutOfScope(tourismItems);
+        TourismPhaseResult tourismPhase = syncFromTourismApi(tourismItems, syncedAt);
         KakaoPhaseResult kakaoPhase = sweepKakaoOnly(syncedAt);
 
         log.info(
-                "병원 동기화 완료: 관광공사={}건 (양쪽매칭={}, 관광공사단독={}), "
+                "병원 동기화 완료: 범위밖삭제={}, 관광공사={}건 (양쪽매칭={}, 관광공사단독={}), "
                         + "카카오 스윕={}건 발견 (카카오단독 신규={})",
-                tourismPhase.fetched, tourismPhase.matchedBoth, tourismPhase.tourismOnly,
+                pruned, tourismPhase.fetched, tourismPhase.matchedBoth, tourismPhase.tourismOnly,
                 kakaoPhase.sweepTotal, kakaoPhase.newlyCreated);
 
         return new SyncResult(
+                pruned,
                 tourismPhase.fetched,
                 tourismPhase.matchedBoth,
                 tourismPhase.tourismOnly,
@@ -78,9 +88,43 @@ public class HospitalSyncService {
                 syncedAt);
     }
 
-    private TourismPhaseResult syncFromTourismApi(Instant syncedAt) {
-        List<MedicalTourismListItem> items = medicalTourismService.listAllSeoul(KOREAN_LANG);
+    /**
+     * 강남구/서초구 밖 데이터(과거 서울 전체 동기화 잔재)를 삭제한다.
+     * 카카오 출처가 있는 행(addressName이 항상 한글)은 주소 접두어로 판단하고,
+     * TOURISM_API 단독 행은 addressName이 langDivCd와 무관하게 로마자 표기라
+     * 텍스트로 판단할 수 없으므로, 이번에 새로 가져온 강남/서초 목록에 그
+     * tourismContentId가 여전히 있는지로 판단한다.
+     */
+    private int pruneOutOfScope(List<MedicalTourismListItem> currentTourismItems) {
+        Set<String> validTourismContentIds = new HashSet<>();
+        for (MedicalTourismListItem item : currentTourismItems) {
+            validTourismContentIds.add(item.contentId());
+        }
 
+        List<Place> outOfScope = new ArrayList<>();
+        for (Place place : placeRepository.findAll()) {
+            if ("MANUAL".equals(place.getSource())) {
+                continue; // 관리 페이지에서 직접 추가한 건 범위와 무관하게 유지
+            }
+            boolean inScope;
+            if (SOURCE_TOURISM_ONLY.equals(place.getSource())) {
+                inScope = validTourismContentIds.contains(place.getTourismContentId());
+            } else {
+                String address = place.getAddressName();
+                inScope = address != null
+                        && IN_SCOPE_ADDRESS_PREFIXES.stream().anyMatch(address::startsWith);
+            }
+            if (!inScope) {
+                outOfScope.add(place);
+            }
+        }
+        if (!outOfScope.isEmpty()) {
+            placeRepository.deleteAll(outOfScope);
+        }
+        return outOfScope.size();
+    }
+
+    private TourismPhaseResult syncFromTourismApi(List<MedicalTourismListItem> items, Instant syncedAt) {
         int matchedBoth = 0;
         int tourismOnly = 0;
 
@@ -107,30 +151,39 @@ public class HospitalSyncService {
         return new TourismPhaseResult(items.size(), matchedBoth, tourismOnly);
     }
 
-    private void upsertMatched(MedicalTourismListItem item, KakaoPlace place, String image, Instant syncedAt) {
-        Hospital hospital = hospitalRepository.findByPlaceId(place.id()).orElse(null);
-        if (hospital == null) {
-            hospitalRepository.save(new Hospital(
-                    place.id(),
+    private void upsertMatched(MedicalTourismListItem item, KakaoPlace kakaoPlace, String image, Instant syncedAt) {
+        Place place = placeRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
+        if (place == null) {
+            placeRepository.save(new Place(
+                    kakaoPlace.id(),
                     item.contentId(),
-                    place.placeName(),
-                    place.categoryName(),
-                    place.addressName(),
-                    place.roadAddressName(),
-                    place.mapX(),
-                    place.mapY(),
+                    kakaoPlace.placeName(),
+                    kakaoPlace.categoryName(),
+                    kakaoPlace.addressName(),
+                    kakaoPlace.roadAddressName(),
+                    kakaoPlace.mapX(),
+                    kakaoPlace.mapY(),
                     image,
+                    kakaoPlace.categoryGroupCode(),
+                    kakaoPlace.categoryGroupName(),
+                    kakaoPlace.phone(),
+                    kakaoPlace.placeUrl(),
+                    Place.PlaceType.HOSPITAL,
                     SOURCE_BOTH,
                     syncedAt));
         } else {
-            hospital.updateFromSync(
-                    place.placeName(),
-                    place.categoryName(),
-                    place.addressName(),
-                    place.roadAddressName(),
-                    place.mapX(),
-                    place.mapY(),
+            place.updateFromSync(
+                    kakaoPlace.placeName(),
+                    kakaoPlace.categoryName(),
+                    kakaoPlace.addressName(),
+                    kakaoPlace.roadAddressName(),
+                    kakaoPlace.mapX(),
+                    kakaoPlace.mapY(),
                     image,
+                    kakaoPlace.categoryGroupCode(),
+                    kakaoPlace.categoryGroupName(),
+                    kakaoPlace.phone(),
+                    kakaoPlace.placeUrl(),
                     SOURCE_BOTH,
                     syncedAt);
         }
@@ -144,10 +197,10 @@ public class HospitalSyncService {
             return;
         }
 
-        Hospital hospital = hospitalRepository.findByTourismContentId(item.contentId()).orElse(null);
+        Place place = placeRepository.findByTourismContentId(item.contentId()).orElse(null);
         String address = firstNonBlank(item.baseAddr(), item.detailAddr());
-        if (hospital == null) {
-            hospitalRepository.save(new Hospital(
+        if (place == null) {
+            placeRepository.save(new Place(
                     null,
                     item.contentId(),
                     item.title(),
@@ -157,17 +210,26 @@ public class HospitalSyncService {
                     mapX,
                     mapY,
                     image,
+                    null,
+                    null,
+                    item.tel(),
+                    null,
+                    Place.PlaceType.HOSPITAL,
                     SOURCE_TOURISM_ONLY,
                     syncedAt));
         } else {
-            hospital.updateFromSync(
+            place.updateFromSync(
                     item.title(),
-                    hospital.getCategoryName(),
+                    place.getCategoryName(),
                     address,
-                    hospital.getRoadAddressName(),
+                    place.getRoadAddressName(),
                     mapX,
                     mapY,
                     image,
+                    place.getCategoryGroupCode(),
+                    place.getCategoryGroupName(),
+                    firstNonBlank(item.tel(), place.getPhone()),
+                    place.getPlaceUrl(),
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
         }
@@ -175,7 +237,7 @@ public class HospitalSyncService {
 
     private KakaoPhaseResult sweepKakaoOnly(Instant syncedAt) {
         Map<String, KakaoPlace> deduped = new LinkedHashMap<>();
-        for (SeoulDistricts.Center district : SeoulDistricts.ALL) {
+        for (SeoulDistricts.Center district : SeoulDistricts.GANGNAM_SEOCHO) {
             try {
                 List<KakaoPlace> found = kakaoPlaceClient.sweepHospitals(
                         district.lat(), district.lng(), DISTRICT_SWEEP_RADIUS_M);
@@ -191,10 +253,10 @@ public class HospitalSyncService {
 
         int newlyCreated = 0;
         for (KakaoPlace place : deduped.values()) {
-            if (hospitalRepository.findByPlaceId(place.id()).isPresent()) {
+            if (placeRepository.findByPlaceId(place.id()).isPresent()) {
                 continue; // 이미 1단계(관광공사 매칭)로 들어와 있음
             }
-            hospitalRepository.save(new Hospital(
+            placeRepository.save(new Place(
                     place.id(),
                     null,
                     place.placeName(),
@@ -204,6 +266,11 @@ public class HospitalSyncService {
                     place.mapX(),
                     place.mapY(),
                     null,
+                    place.categoryGroupCode(),
+                    place.categoryGroupName(),
+                    place.phone(),
+                    place.placeUrl(),
+                    Place.PlaceType.HOSPITAL,
                     SOURCE_KAKAO_ONLY,
                     syncedAt));
             newlyCreated++;
@@ -258,6 +325,7 @@ public class HospitalSyncService {
     }
 
     public record SyncResult(
+            int prunedOutOfScope,
             int tourismFetched,
             int matchedBoth,
             int tourismOnly,

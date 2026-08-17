@@ -36,6 +36,9 @@ dependencies {
     // 그늘길 라우팅용 노드 최근접 탐색 (KdTree) -- ShadeGraph.nearestNode()
     implementation 'org.locationtech.jts:jts-core:1.20.0'
 
+    // 병원 ML 태그 CSV 백필 -- HospitalCsvImportService
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-csv'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
 }

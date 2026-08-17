@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>병원/장소 관리</title>
+<title>장소 관리</title>
 <style>
   :root {
     --bg: #f6f7fa;
@@ -58,6 +58,10 @@
   td.actions { white-space: nowrap; display: flex; gap: 6px; }
   .empty { padding: 32px; text-align: center; color: var(--muted); }
   .badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+  .type-pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .type-pill.HOSPITAL { background: #fdecee; color: var(--danger); }
+  .type-pill.ACCOMMODATION { background: #eef1fe; color: var(--accent); }
+  .type-pill.ATTRACTION { background: #e7f7ef; color: #1e9e6b; }
 
   .modal-backdrop {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -98,7 +102,7 @@
 
 <div class="gate-backdrop" id="gate-backdrop">
   <div class="gate-box">
-    <h2>병원/장소 관리</h2>
+    <h2>장소 관리</h2>
     <p>아이디를 입력하세요</p>
     <form id="gate-form">
       <input id="gate-id-input" type="text" placeholder="아이디" autocomplete="off" autofocus>
@@ -108,8 +112,8 @@
   </div>
 </div>
 
-<h1>병원/장소 관리</h1>
-<p class="subtitle">/api/hospitals — 조회는 공개, 추가·수정·삭제는 로그인(JWT) 필요</p>
+<h1>장소 관리</h1>
+<p class="subtitle">/api/places — 조회는 공개, 추가·수정·삭제는 로그인(JWT) 필요</p>
 
 <div class="token-bar">
   <label for="token-input">JWT 토큰</label>
@@ -124,6 +128,12 @@
     <input id="search-input" type="text" placeholder="이름으로 검색" style="padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:inherit; min-width:200px;">
     <button id="search-btn">검색</button>
     <button id="search-clear-btn" style="display:none;">전체보기</button>
+    <select id="type-filter" style="padding:7px 10px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:inherit;">
+      <option value="">전체 종류</option>
+      <option value="HOSPITAL">병원</option>
+      <option value="ACCOMMODATION">숙소</option>
+      <option value="ATTRACTION">장소</option>
+    </select>
     <button class="primary" id="add-btn">+ 새 장소 추가</button>
   </div>
 </div>
@@ -132,6 +142,7 @@
   <thead>
     <tr>
       <th>ID</th>
+      <th>종류</th>
       <th>이름</th>
       <th>카테고리</th>
       <th>기본 주소</th>
@@ -151,7 +162,14 @@
 <div class="modal-backdrop" id="modal-backdrop">
   <div class="modal">
     <h2 id="modal-title">새 장소 추가</h2>
-    <form id="hospital-form">
+    <form id="place-form">
+      <div class="field"><label>종류 *</label>
+        <select name="placeType" required style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit;">
+          <option value="HOSPITAL">병원</option>
+          <option value="ACCOMMODATION">숙소</option>
+          <option value="ATTRACTION">장소</option>
+        </select>
+      </div>
       <div class="field"><label>place_id (카카오 고유 ID)</label><input name="placeId" required></div>
       <div class="field"><label>장소명 *</label><input name="placeName" required></div>
       <div class="field"><label>카테고리</label><input name="categoryName" placeholder="문화,예술 > 영화 > CGV"></div>
@@ -199,7 +217,7 @@
     unlock();
   }
 
-  const API_BASE = '/api/hospitals';
+  const API_BASE = '/api/places';
   const tokenInput = document.getElementById('token-input');
   const tokenStatus = document.getElementById('token-status');
   const rowsEl = document.getElementById('rows');
@@ -207,7 +225,7 @@
   const countEl = document.getElementById('count');
   const modalBackdrop = document.getElementById('modal-backdrop');
   const modalTitle = document.getElementById('modal-title');
-  const form = document.getElementById('hospital-form');
+  const form = document.getElementById('place-form');
   const formError = document.getElementById('form-error');
 
   let editingId = null;
@@ -240,7 +258,9 @@
     return headers;
   }
 
-  async function loadHospitals(name) {
+  const TYPE_LABELS = { HOSPITAL: '병원', ACCOMMODATION: '숙소', ATTRACTION: '장소' };
+
+  async function loadPlaces(name) {
     countEl.textContent = '불러오는 중...';
     const url = name ? `${API_BASE}?name=${encodeURIComponent(name)}` : API_BASE;
     const res = await fetch(url);
@@ -248,18 +268,22 @@
       countEl.textContent = '목록을 불러오지 못했습니다 (HTTP ' + res.status + ')';
       return;
     }
-    const items = await res.json();
+    let items = await res.json();
+    const type = typeFilter.value;
+    if (type) items = items.filter((item) => item.placeType === type);
     renderRows(items);
-    countEl.textContent = items.length + '개' + (name ? ` ("${name}" 검색 결과)` : '');
+    const suffix = [name ? `"${name}" 검색` : null, type ? TYPE_LABELS[type] : null].filter(Boolean).join(', ');
+    countEl.textContent = items.length + '개' + (suffix ? ` (${suffix})` : '');
   }
 
   const searchInput = document.getElementById('search-input');
   const searchClearBtn = document.getElementById('search-clear-btn');
+  const typeFilter = document.getElementById('type-filter');
 
   function runSearch() {
     const term = searchInput.value.trim();
     searchClearBtn.style.display = term ? 'inline-block' : 'none';
-    loadHospitals(term);
+    loadPlaces(term);
   }
 
   document.getElementById('search-btn').addEventListener('click', runSearch);
@@ -269,8 +293,9 @@
   searchClearBtn.addEventListener('click', () => {
     searchInput.value = '';
     searchClearBtn.style.display = 'none';
-    loadHospitals();
+    loadPlaces();
   });
+  typeFilter.addEventListener('change', () => loadPlaces(searchInput.value.trim()));
 
   function renderRows(items) {
     rowsEl.innerHTML = '';
@@ -279,6 +304,7 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${item.id}</td>
+        <td><span class="type-pill ${escapeAttr(item.placeType || '')}">${escapeHtml(TYPE_LABELS[item.placeType] || item.placeType || '-')}</span></td>
         <td><strong>${escapeHtml(item.placeName)}</strong></td>
         <td>${escapeHtml(item.categoryName || '')}</td>
         <td>${escapeHtml(item.addressName || '')}</td>
@@ -319,7 +345,7 @@
         alert('삭제 실패 (HTTP ' + res.status + ')');
         return;
       }
-      loadHospitals(searchInput.value.trim());
+      loadPlaces(searchInput.value.trim());
     } else if (btn.dataset.action === 'edit') {
       const res = await fetch(`${API_BASE}/${id}`);
       if (!res.ok) { alert('불러오기 실패'); return; }
@@ -336,6 +362,7 @@
     formError.textContent = '';
     editingId = item ? item.id : null;
     modalTitle.textContent = item ? `장소 수정 (id=${item.id})` : '새 장소 추가';
+    form.placeType.value = item?.placeType || 'HOSPITAL';
     form.placeId.value = item?.placeId || '';
     form.placeId.disabled = !!item; // place_id는 수정 시 변경 불가 (매칭 키)
     form.placeName.value = item?.placeName || '';
@@ -361,6 +388,7 @@
       return;
     }
     const payload = {
+      placeType: form.placeType.value,
       placeId: form.placeId.value.trim(),
       placeName: form.placeName.value.trim(),
       categoryName: form.categoryName.value.trim() || null,
@@ -382,11 +410,11 @@
       return;
     }
     closeModal();
-    loadHospitals(searchInput.value.trim());
+    loadPlaces(searchInput.value.trim());
   });
 
   refreshTokenStatus();
-  loadHospitals();
+  loadPlaces();
 </script>
 </body>
 </html>

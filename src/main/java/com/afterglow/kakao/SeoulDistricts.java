@@ -39,6 +39,11 @@ public final class SeoulDistricts {
             new Center("중구", 37.5641, 126.9979),
             new Center("중랑구", 37.6066, 127.0927));
 
+    /** 지금 병원 동기화 범위 — 강남구/서초구만. */
+    public static final List<Center> GANGNAM_SEOCHO = List.of(
+            new Center("강남구", 37.5172, 127.0473),
+            new Center("서초구", 37.4837, 127.0324));
+
     private SeoulDistricts() {
     }
 }
