@@ -274,9 +274,11 @@
   });
   typeFilter.addEventListener('change', () => loadPlaces(searchInput.value.trim()));
 
-  // 기본 컬럼은 종류 무관 항상 표시. 병원(HOSPITAL)은 피부시술 태그, 숙소/장소는 도보 제약
-  // 태그가 서로 겹치지 않는 값이라 "전체 종류" 볼 때 반은 항상 비는 문제가 있었음 —
+  // 기본 컬럼은 종류 무관 항상 표시. 병원(HOSPITAL)은 피부시술 태그, 관광명소(ATTRACTION)는
+  // 도보 제약 태그가 서로 겹치지 않는 값이라 "전체 종류" 볼 때 반은 항상 비는 문제가 있었음 —
   // 그래서 상단 종류 필터에 맞춰 관련 있는 컬럼만 끼워넣는다(전체 종류일 땐 기본만).
+  // 숙소(ACCOMMODATION)는 도보 제약 태그 CSV(gangnam_seocho_places_with_constraints.csv) 대상이
+  // 아니라서 DB에 전부 null — WALK_COLUMNS를 붙이지 않는다.
   const BASE_COLUMNS = [
     { label: 'ID', render: (item) => item.id },
     { label: '종류', render: (item) =>
@@ -287,7 +289,7 @@
 
   const HOSPITAL_COLUMNS = [
     { label: '피부시술 신뢰도', render: (item) => escapeHtml(item.skinTreatmentConfidence || '-') },
-    { label: '시술 키워드', render: (item) => escapeHtml((item.skinTreatmentSignals || '').split('|').filter(Boolean).join(', ') || '-') },
+    { label: '시술 키워드', render: (item) => escapeHtml((item.skinTreatmentSignals || '').split('|').map((s) => s.replace(/^kakao_category:/, '')).filter(Boolean).join(', ') || '-') },
   ];
 
   const WALK_COLUMNS = [
@@ -323,7 +325,7 @@
     const type = typeFilter.value;
     let extra = [];
     if (type === 'HOSPITAL') extra = HOSPITAL_COLUMNS;
-    else if (type === 'ACCOMMODATION' || type === 'ATTRACTION') extra = WALK_COLUMNS;
+    else if (type === 'ATTRACTION') extra = WALK_COLUMNS;
     return [...BASE_COLUMNS, ...extra, ...TAIL_COLUMNS];
   }
 
