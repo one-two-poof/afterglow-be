@@ -79,47 +79,23 @@
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
   .error-msg { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
 
-  .gate-backdrop {
-    position: fixed; inset: 0; background: var(--bg);
-    display: flex; align-items: center; justify-content: center; z-index: 20;
-  }
-  .gate-box {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 28px; width: 320px; max-width: 90vw; text-align: center;
-  }
-  .gate-box h2 { margin: 0 0 4px; font-size: 16px; }
-  .gate-box p { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
-  .gate-box input {
-    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
-    font-size: 14px; font-family: inherit; text-align: center; margin-bottom: 10px;
-  }
-  .gate-box button { width: 100%; }
-  .gate-error { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
-  body.locked > *:not(.gate-backdrop) { display: none !important; }
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 16px; }
+  .pagination button { padding: 6px 12px; }
+  .pagination span { font-size: 13px; color: var(--muted); }
 </style>
 </head>
-<body class="locked">
-
-<div class="gate-backdrop" id="gate-backdrop">
-  <div class="gate-box">
-    <h2>장소 관리</h2>
-    <p>아이디를 입력하세요</p>
-    <form id="gate-form">
-      <input id="gate-id-input" type="text" placeholder="아이디" autocomplete="off" autofocus>
-      <button type="submit" class="primary">입장</button>
-      <div class="gate-error" id="gate-error"></div>
-    </form>
-  </div>
-</div>
+<body>
 
 <h1>장소 관리</h1>
-<p class="subtitle">/api/places — 조회는 공개, 추가·수정·삭제는 로그인(JWT) 필요</p>
+<p class="subtitle">/api/places — 조회는 공개, 추가·수정·삭제는 관리자 로그인 필요</p>
 
 <div class="token-bar">
   <label for="token-input">JWT 토큰</label>
   <input id="token-input" type="password" placeholder="Bearer 토큰 (Authorization 헤더에 사용)">
   <button id="token-save">저장</button>
   <span id="token-status" class="token-status missing">토큰 없음 (조회만 가능)</span>
+  <a href="/admin/login.html" id="login-link"><button type="button">관리자 로그인</button></a>
+  <button type="button" id="logout-btn" style="display:none;">로그아웃</button>
 </div>
 
 <div class="toolbar">
@@ -139,25 +115,15 @@
 </div>
 
 <table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>종류</th>
-      <th>이름</th>
-      <th>카테고리</th>
-      <th>기본 주소</th>
-      <th>도로명 주소</th>
-      <th>위도(mapY)</th>
-      <th>경도(mapX)</th>
-      <th>이미지</th>
-      <th>출처</th>
-      <th>마지막 동기화</th>
-      <th></th>
-    </tr>
-  </thead>
+  <thead id="thead"></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="empty" class="empty" style="display:none;">등록된 장소가 없습니다.</div>
+<div class="pagination" id="pagination" style="display:none;">
+  <button type="button" id="prev-page-btn">이전</button>
+  <span id="page-indicator"></span>
+  <button type="button" id="next-page-btn">다음</button>
+</div>
 
 <div class="modal-backdrop" id="modal-backdrop">
   <div class="modal">
@@ -188,38 +154,10 @@
 </div>
 
 <script>
-  const ADMIN_ID = 'dunaduneo';
-  const gateBackdrop = document.getElementById('gate-backdrop');
-  const gateForm = document.getElementById('gate-form');
-  const gateIdInput = document.getElementById('gate-id-input');
-  const gateError = document.getElementById('gate-error');
-
-  function isUnlocked() {
-    return localStorage.getItem('afterglow_admin_id') === ADMIN_ID;
-  }
-
-  function unlock() {
-    document.body.classList.remove('locked');
-    gateBackdrop.style.display = 'none';
-  }
-
-  gateForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (gateIdInput.value.trim() === ADMIN_ID) {
-      localStorage.setItem('afterglow_admin_id', ADMIN_ID);
-      unlock();
-    } else {
-      gateError.textContent = '아이디가 올바르지 않습니다.';
-    }
-  });
-
-  if (isUnlocked()) {
-    unlock();
-  }
-
   const API_BASE = '/api/places';
   const tokenInput = document.getElementById('token-input');
   const tokenStatus = document.getElementById('token-status');
+  const theadEl = document.getElementById('thead');
   const rowsEl = document.getElementById('rows');
   const emptyEl = document.getElementById('empty');
   const countEl = document.getElementById('count');
@@ -234,20 +172,32 @@
     return localStorage.getItem('afterglow_admin_jwt') || '';
   }
 
+  const loginLink = document.getElementById('login-link');
+  const logoutBtn = document.getElementById('logout-btn');
+
   function refreshTokenStatus() {
     const token = getToken();
     tokenInput.value = token;
     if (token) {
       tokenStatus.textContent = '토큰 설정됨 (쓰기 가능)';
       tokenStatus.className = 'token-status ok';
+      loginLink.style.display = 'none';
+      logoutBtn.style.display = 'inline-block';
     } else {
       tokenStatus.textContent = '토큰 없음 (조회만 가능)';
       tokenStatus.className = 'token-status missing';
+      loginLink.style.display = 'inline-block';
+      logoutBtn.style.display = 'none';
     }
   }
 
   document.getElementById('token-save').addEventListener('click', () => {
     localStorage.setItem('afterglow_admin_jwt', tokenInput.value.trim());
+    refreshTokenStatus();
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('afterglow_admin_jwt');
     refreshTokenStatus();
   });
 
@@ -260,6 +210,10 @@
 
   const TYPE_LABELS = { HOSPITAL: '병원', ACCOMMODATION: '숙소', ATTRACTION: '장소' };
 
+  const PAGE_SIZE = 10;
+  let currentItems = [];
+  let currentPage = 1;
+
   async function loadPlaces(name) {
     countEl.textContent = '불러오는 중...';
     const url = name ? `${API_BASE}?name=${encodeURIComponent(name)}` : API_BASE;
@@ -271,10 +225,33 @@
     let items = await res.json();
     const type = typeFilter.value;
     if (type) items = items.filter((item) => item.placeType === type);
-    renderRows(items);
+    currentItems = items;
+    currentPage = 1;
     const suffix = [name ? `"${name}" 검색` : null, type ? TYPE_LABELS[type] : null].filter(Boolean).join(', ');
     countEl.textContent = items.length + '개' + (suffix ? ` (${suffix})` : '');
+    renderPage();
   }
+
+  function renderPage() {
+    const totalPages = Math.max(1, Math.ceil(currentItems.length / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = (currentPage - 1) * PAGE_SIZE;
+    renderRows(currentItems.slice(start, start + PAGE_SIZE));
+
+    const paginationEl = document.getElementById('pagination');
+    paginationEl.style.display = currentItems.length > PAGE_SIZE ? 'flex' : 'none';
+    document.getElementById('page-indicator').textContent = `${currentPage} / ${totalPages}`;
+    document.getElementById('prev-page-btn').disabled = currentPage <= 1;
+    document.getElementById('next-page-btn').disabled = currentPage >= totalPages;
+  }
+
+  document.getElementById('prev-page-btn').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; renderPage(); }
+  });
+  document.getElementById('next-page-btn').addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(currentItems.length / PAGE_SIZE));
+    if (currentPage < totalPages) { currentPage++; renderPage(); }
+  });
 
   const searchInput = document.getElementById('search-input');
   const searchClearBtn = document.getElementById('search-clear-btn');
@@ -297,28 +274,69 @@
   });
   typeFilter.addEventListener('change', () => loadPlaces(searchInput.value.trim()));
 
+  // 기본 컬럼은 종류 무관 항상 표시. 병원(HOSPITAL)은 피부시술 태그, 숙소/장소는 도보 제약
+  // 태그가 서로 겹치지 않는 값이라 "전체 종류" 볼 때 반은 항상 비는 문제가 있었음 —
+  // 그래서 상단 종류 필터에 맞춰 관련 있는 컬럼만 끼워넣는다(전체 종류일 땐 기본만).
+  const BASE_COLUMNS = [
+    { label: 'ID', render: (item) => item.id },
+    { label: '종류', render: (item) =>
+        `<span class="type-pill ${escapeAttr(item.placeType || '')}">${escapeHtml(TYPE_LABELS[item.placeType] || item.placeType || '-')}</span>` },
+    { label: '이름', render: (item) => `<strong>${escapeHtml(item.placeName)}</strong>` },
+    { label: '카테고리', render: (item) => escapeHtml(item.categoryName || '') },
+  ];
+
+  const HOSPITAL_COLUMNS = [
+    { label: '피부시술 신뢰도', render: (item) => escapeHtml(item.skinTreatmentConfidence || '-') },
+    { label: '시술 키워드', render: (item) => escapeHtml((item.skinTreatmentSignals || '').split('|').filter(Boolean).join(', ') || '-') },
+  ];
+
+  const WALK_COLUMNS = [
+    { label: '실내', render: (item) => formatBool(item.isIndoor) },
+    { label: '발열원', render: (item) => formatBool(item.isHeatSource) },
+    { label: '마사지 적합', render: (item) => formatBool(item.isMassageSpot) },
+    { label: '도보난이도', render: (item) => item.walkHard ?? '-' },
+    { label: '결측', render: (item) => formatBool(item.isNa) },
+  ];
+
+  const TAIL_COLUMNS = [
+    { label: '기본 주소', render: (item) => escapeHtml(item.addressName || '') },
+    { label: '도로명 주소', render: (item) => escapeHtml(item.roadAddressName || '') },
+    { label: '위도(mapY)', render: (item) => item.mapY ?? '' },
+    { label: '경도(mapX)', render: (item) => item.mapX ?? '' },
+    { label: '이미지', render: (item) =>
+        (item.image ? `<a href="${escapeAttr(item.image)}" target="_blank" rel="noopener">보기</a>` : '-')
+        + (item.imageOverridden ? ' <span class="badge">수동</span>' : '') },
+    { label: '출처', render: (item) => escapeHtml(item.source || '') },
+    { label: '마지막 동기화', render: (item) => (item.syncedAt ? new Date(item.syncedAt).toLocaleString('ko-KR') : '') },
+    { label: '', cellClass: 'actions', render: (item) =>
+        `<button data-action="edit" data-id="${item.id}">수정</button>`
+        + `<button data-action="delete" data-id="${item.id}" class="danger">삭제</button>` },
+  ];
+
+  function formatBool(v) {
+    if (v === true) return '예';
+    if (v === false) return '아니오';
+    return '-';
+  }
+
+  function currentColumns() {
+    const type = typeFilter.value;
+    let extra = [];
+    if (type === 'HOSPITAL') extra = HOSPITAL_COLUMNS;
+    else if (type === 'ACCOMMODATION' || type === 'ATTRACTION') extra = WALK_COLUMNS;
+    return [...BASE_COLUMNS, ...extra, ...TAIL_COLUMNS];
+  }
+
   function renderRows(items) {
+    const columns = currentColumns();
+    theadEl.innerHTML = '<tr>' + columns.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('') + '</tr>';
     rowsEl.innerHTML = '';
     emptyEl.style.display = items.length === 0 ? 'block' : 'none';
     for (const item of items) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${item.id}</td>
-        <td><span class="type-pill ${escapeAttr(item.placeType || '')}">${escapeHtml(TYPE_LABELS[item.placeType] || item.placeType || '-')}</span></td>
-        <td><strong>${escapeHtml(item.placeName)}</strong></td>
-        <td>${escapeHtml(item.categoryName || '')}</td>
-        <td>${escapeHtml(item.addressName || '')}</td>
-        <td>${escapeHtml(item.roadAddressName || '')}</td>
-        <td>${item.mapY ?? ''}</td>
-        <td>${item.mapX ?? ''}</td>
-        <td>${item.image ? `<a href="${escapeAttr(item.image)}" target="_blank" rel="noopener">보기</a>` : '-'}${item.imageOverridden ? ' <span class="badge">수동</span>' : ''}</td>
-        <td>${escapeHtml(item.source || '')}</td>
-        <td>${item.syncedAt ? new Date(item.syncedAt).toLocaleString('ko-KR') : ''}</td>
-        <td class="actions">
-          <button data-action="edit" data-id="${item.id}">수정</button>
-          <button data-action="delete" data-id="${item.id}" class="danger">삭제</button>
-        </td>
-      `;
+      tr.innerHTML = columns
+          .map((c) => `<td${c.cellClass ? ` class="${c.cellClass}"` : ''}>${c.render(item)}</td>`)
+          .join('');
       rowsEl.appendChild(tr);
     }
   }

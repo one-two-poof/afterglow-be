@@ -18,7 +18,15 @@ public record PlaceResponse(
         String source,
         boolean imageOverridden,
         Instant syncedAt,
-        Place.PlaceType placeType) {
+        Place.PlaceType placeType,
+        String primaryType,
+        String skinTreatmentConfidence,
+        String skinTreatmentSignals,
+        Boolean isIndoor,
+        Boolean isHeatSource,
+        Boolean isMassageSpot,
+        Integer walkHard,
+        Boolean isNa) {
 
     public static PlaceResponse from(Place place) {
         return new PlaceResponse(
@@ -35,6 +43,14 @@ public record PlaceResponse(
                 place.getSource(),
                 place.isImageUrlOverridden(),
                 place.getSyncedAt(),
-                place.getPlaceType());
+                place.getPlaceType(),
+                place.getPrimaryType(),
+                place.getSkinTreatmentConfidence(),
+                place.getSkinTreatmentSignals(),
+                place.getIsIndoor(),
+                place.getIsHeatSource(),
+                place.getIsMassageSpot(),
+                place.getWalkHard(),
+                place.getIsNa());
     }
 }

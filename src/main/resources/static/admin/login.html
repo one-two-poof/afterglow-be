@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>관리자 로그인</title>
+<style>
+  :root {
+    --bg: #f6f7fa;
+    --surface: #ffffff;
+    --ink: #1b2233;
+    --muted: #5b6472;
+    --border: #e2e5ec;
+    --accent: #3e63dd;
+    --danger: #d1414a;
+    --danger-soft: #fdecee;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", "Pretendard Variable", Pretendard, sans-serif;
+  }
+  .box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 28px; width: 320px; max-width: 90vw;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.subtitle { margin: 0 0 20px; color: var(--muted); font-size: 12.5px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .field input {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 14px; font-family: inherit;
+  }
+  button {
+    width: 100%; margin-top: 6px; padding: 10px 14px; border-radius: 7px; border: 1px solid var(--accent);
+    background: var(--accent); color: white; font-size: 14px; font-family: inherit; cursor: pointer;
+  }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .error-msg { color: var(--danger); background: var(--danger-soft); border-radius: 6px; padding: 8px 10px;
+    font-size: 12.5px; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h1>관리자 로그인</h1>
+  <p class="subtitle">/admin/places.html 관리를 위한 로그인입니다.</p>
+  <form id="login-form">
+    <div class="field"><label for="email">이메일</label><input id="email" type="email" required autocomplete="username"></div>
+    <div class="field"><label for="password">비밀번호</label><input id="password" type="password" required autocomplete="current-password"></div>
+    <button type="submit" id="submit-btn">로그인</button>
+    <div class="error-msg" id="error-msg"></div>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById('login-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const errorMsg = document.getElementById('error-msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorMsg.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = '로그인 중...';
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value,
+        }),
+      });
+      if (!res.ok) {
+        errorMsg.textContent = res.status === 401
+          ? '이메일 또는 비밀번호가 올바르지 않습니다.'
+          : '로그인 실패 (HTTP ' + res.status + ')';
+        errorMsg.style.display = 'block';
+        return;
+      }
+      const data = await res.json();
+      localStorage.setItem('afterglow_admin_jwt', data.accessToken);
+      location.href = '/admin/places.html';
+    } catch (err) {
+      errorMsg.textContent = '네트워크 오류: ' + err.message;
+      errorMsg.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '로그인';
+    }
+  });
+</script>
+</body>
+</html>

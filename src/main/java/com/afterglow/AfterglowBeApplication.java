@@ -1,5 +1,6 @@
 package com.afterglow;
 
+import com.afterglow.config.AdminProperties;
 import com.afterglow.config.AppCorsProperties;
 import com.afterglow.config.HospitalSyncProperties;
 import com.afterglow.config.JwtProperties;
@@ -23,7 +24,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         MedicalTourismProperties.class,
         OAuthProperties.class,
         KakaoProperties.class,
-        HospitalSyncProperties.class
+        HospitalSyncProperties.class,
+        AdminProperties.class
 })
 public class AfterglowBeApplication {
 

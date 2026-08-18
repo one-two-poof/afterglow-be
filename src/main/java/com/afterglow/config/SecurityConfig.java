@@ -50,6 +50,7 @@ public class SecurityConfig {
                     "/api/items/**",
                     "/api/medical-tourism/**",
                     "/api/auth/login/google",
+                    "/api/admin/login",
                     "/oauth2/**",
                     "/login/**",
                     "/h2-console/**",
@@ -67,8 +68,11 @@ public class SecurityConfig {
                     // 장소 관리 페이지 (정적 리소스 자체는 공개, 안의 쓰기 API 호출은 JWT로 인증)
                     "/admin/**"
                 ).permitAll()
-                // 장소 조회는 공개, 생성·수정·삭제는 로그인 필요
+                // 장소 조회는 공개, 생성·수정·삭제·동기화는 관리자(role=ADMIN, /admin/login.html) 전용
                 .requestMatchers(HttpMethod.GET, "/api/places", "/api/places/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/places", "/api/places/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/places/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/places/**").hasRole("ADMIN")
                 // 나머지는 인증 필요
                 .anyRequest().authenticated()
             )

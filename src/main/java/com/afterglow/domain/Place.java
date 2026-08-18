@@ -164,7 +164,11 @@ public class Place {
         this.syncedAt = syncedAt;
     }
 
-    /** API 재동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않는다. */
+    /**
+     * API 재동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않고,
+     * override되지 않았더라도 이번 응답에 이미지가 없으면(관광공사 상당수가 그렇다)
+     * 기존 값을 지우지 않고 그대로 둔다 — 값이 있을 때만 교체한다.
+     */
     public void updateFromSync(
             String placeName,
             String categoryName,
@@ -185,7 +189,7 @@ public class Place {
         this.roadAddressName = roadAddressName;
         this.mapX = mapX;
         this.mapY = mapY;
-        if (!this.imageUrlOverridden) {
+        if (!this.imageUrlOverridden && imageUrl != null && !imageUrl.isBlank()) {
             this.imageUrl = imageUrl;
         }
         this.categoryGroupCode = categoryGroupCode;
