@@ -1,6 +1,6 @@
 package com.afterglow.web;
 
-import com.afterglow.domain.Place;
+import com.afterglow.domain.PlaceType;
 import com.afterglow.service.HospitalSyncService;
 import com.afterglow.service.HospitalSyncService.SyncResult;
 import com.afterglow.service.PlaceCsvImportService;
@@ -27,7 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/places")
-@Tag(name = "Place", description = "병원·숙소·관광명소를 통합해서 담는 장소 API. 조회는 공개, 쓰기는 JWT 필요")
+@Tag(name = "Place", description = "병원·숙소는 hospitals_accommodations, 관광명소는 attractions 테이블에 나뉘어 저장된다. "
+        + "조회는 공개, 쓰기는 JWT 필요")
 public class PlaceController {
 
     private static final String DEFAULT_HOSPITAL_ML_TAG_CSV_PATH =
@@ -46,14 +47,9 @@ public class PlaceController {
         this.placeCsvImportService = placeCsvImportService;
     }
 
-    /**
-     * 장소 목록 (병원은 관광공사+카카오, 숙소 등은 CSV import로 채워지는 통합 RDB 기준).
-     * 좌표(mapX/mapY)와 카카오 place_id를 포함해 지도 표시에 바로 쓸 수 있다.
-     * name 파라미터를 주면 장소명 부분 일치(대소문자 무시)로 검색한다.
-     */
     @Operation(
             summary = "장소 목록 조회",
-            description = "병원(관광공사+카카오 동기화)·숙소·관광명소를 통합한 장소 목록. "
+            description = "병원·숙소(hospitals_accommodations)와 관광명소(attractions) 두 테이블을 합친 목록. "
                     + "좌표(mapX/mapY)와 카카오 place_id를 포함해 지도 표시에 바로 쓸 수 있다. "
                     + "name을 주면 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
     @GetMapping
@@ -63,45 +59,52 @@ public class PlaceController {
         return placeService.listAll(name);
     }
 
-    @Operation(summary = "장소 단건 조회", description = "id로 장소 1건을 조회한다. 인증 불필요.")
+    @Operation(
+            summary = "장소 단건 조회",
+            description = "id와 placeType으로 장소 1건을 조회한다. id는 hospitals_accommodations/attractions 두 테이블에서 "
+                    + "각자 독립적으로 채번되므로 placeType 없이는 어느 테이블 행인지 알 수 없다. 인증 불필요.")
     @GetMapping("/{id}")
-    public PlaceResponse getPlace(@PathVariable Long id) {
-        return placeService.getOne(id);
+    public PlaceResponse getPlace(
+            @PathVariable Long id,
+            @Parameter(description = "이 id가 속한 테이블을 정한다 (HOSPITAL/ACCOMMODATION → hospitals_accommodations, ATTRACTION → attractions)")
+            @RequestParam PlaceType placeType) {
+        return placeService.getOne(id, placeType);
     }
 
     @Operation(
             summary = "병원 목록 조회",
-            description = "placeType=HOSPITAL만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+            description = "hospitals_accommodations에서 placeType=HOSPITAL만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
     @GetMapping("/hospital")
     public List<PlaceResponse> listHospitals(
             @Parameter(description = "장소명 부분 검색어 (생략 시 병원 전체)")
             @RequestParam(required = false) String name) {
-        return placeService.listByType(Place.PlaceType.HOSPITAL, name);
+        return placeService.listByType(PlaceType.HOSPITAL, name);
     }
 
     @Operation(
             summary = "숙소 목록 조회",
-            description = "placeType=ACCOMMODATION만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+            description = "hospitals_accommodations에서 placeType=ACCOMMODATION만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
     @GetMapping("/accommodation")
     public List<PlaceResponse> listAccommodations(
             @Parameter(description = "장소명 부분 검색어 (생략 시 숙소 전체)")
             @RequestParam(required = false) String name) {
-        return placeService.listByType(Place.PlaceType.ACCOMMODATION, name);
+        return placeService.listByType(PlaceType.ACCOMMODATION, name);
     }
 
     @Operation(
             summary = "관광명소 목록 조회",
-            description = "placeType=ATTRACTION만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+            description = "attractions 테이블 전체. name을 주면 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
     @GetMapping("/attraction")
     public List<PlaceResponse> listAttractions(
             @Parameter(description = "장소명 부분 검색어 (생략 시 관광명소 전체)")
             @RequestParam(required = false) String name) {
-        return placeService.listByType(Place.PlaceType.ATTRACTION, name);
+        return placeService.listByType(PlaceType.ATTRACTION, name);
     }
 
     @Operation(
             summary = "장소 수동 추가 (관리자)",
-            description = "관리 페이지에서 사람이 직접 새 장소를 추가한다. placeType(HOSPITAL/ACCOMMODATION/ATTRACTION)을 지정해야 한다. JWT 필요.")
+            description = "관리 페이지에서 사람이 직접 새 장소를 추가한다. placeType(HOSPITAL/ACCOMMODATION/ATTRACTION)에 따라 "
+                    + "hospitals_accommodations 또는 attractions 중 어디에 들어갈지 정해진다. JWT 필요.")
     @PostMapping
     public ResponseEntity<PlaceResponse> createPlace(@RequestBody PlaceRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(placeService.create(request));
@@ -109,30 +112,42 @@ public class PlaceController {
 
     @Operation(
             summary = "장소 수동 수정 (관리자)",
-            description = "관리 페이지에서 기존 장소를 수정한다. image를 바꾸면 이후 자동 동기화가 그 값을 덮어쓰지 않는다. JWT 필요.")
+            description = "id와 placeType으로 대상을 정해 수정한다. image를 바꾸면 이후 자동 동기화가 그 값을 덮어쓰지 않는다. "
+                    + "테이블이 다른 종류로는 못 바꾼다(예: 관광명소 → 병원). JWT 필요.")
     @PutMapping("/{id}")
-    public PlaceResponse updatePlace(@PathVariable Long id, @RequestBody PlaceRequest request) {
-        return placeService.update(id, request);
+    public PlaceResponse updatePlace(
+            @PathVariable Long id,
+            @Parameter(description = "이 id가 속한 테이블 (수정 대상을 찾는 데 씀)")
+            @RequestParam PlaceType placeType,
+            @RequestBody PlaceRequest request) {
+        return placeService.update(id, placeType, request);
     }
 
-    @Operation(summary = "장소 삭제 (관리자)", description = "id로 장소 1건을 삭제한다. JWT 필요.")
+    @Operation(
+            summary = "장소 삭제 (관리자)",
+            description = "id와 placeType으로 대상을 정해 삭제한다. JWT 필요.")
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deletePlace(@PathVariable Long id) {
-        placeService.delete(id);
+    public ResponseEntity<Void> deletePlace(
+            @PathVariable Long id,
+            @Parameter(description = "이 id가 속한 테이블 (삭제 대상을 찾는 데 씀)")
+            @RequestParam PlaceType placeType) {
+        placeService.delete(id, placeType);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
             summary = "병원 동기화 수동 트리거",
             description = "한국관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리, 강남/서초 스윕)를 조합해 "
-                    + "place 테이블의 HOSPITAL 행을 갱신한다. 매일 새벽 4시 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+                    + "hospitals_accommodations 테이블의 HOSPITAL 행을 갱신한다. 매일 새벽 4시 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/sync-hospitals")
     public SyncResult syncHospitals() {
         return hospitalSyncService.sync();
     }
 
     /**
-     * 로그인(JWT) 필요 — CSV를 kakaoPlaceId 기준으로 place 테이블에 반영.
+     * 로그인(JWT) 필요 — CSV를 kakaoPlaceId 기준으로 반영한다.
+     * placeType이 ATTRACTION이면 attractions, 그 외(HOSPITAL/ACCOMMODATION)면
+     * hospitals_accommodations 테이블을 대상으로 한다.
      * path 생략 시 병원 ML 태그 CSV를 백필 전용(createIfMissing=false)으로 처리.
      * 문화시설/백화점/드럭스토어/관광명소처럼 살아있는 동기화 소스가 없는 카테고리
      * (예: data/raw/ml_data/gangnam_seocho_places_with_constraints.csv, 도보 제약
@@ -142,17 +157,17 @@ public class PlaceController {
      */
     @Operation(
             summary = "CSV로 장소 일괄 반영 (관리자)",
-            description = "data/raw/ml_data의 CSV를 kakaoPlaceId 기준으로 place 테이블에 반영한다. "
-                    + "createIfMissing=false(기본)면 이미 동기화로 들어와 있는 행에 ML 태그 필드만 채우는 백필 전용. "
-                    + "createIfMissing=true면 매칭 안 되는 행을 새로 만들고, 이때 placeType이 새 행에 적용된다. JWT 필요.")
+            description = "data/raw/ml_data의 CSV를 kakaoPlaceId 기준으로 반영한다. placeType이 ATTRACTION이면 attractions, "
+                    + "그 외는 hospitals_accommodations가 대상이다. createIfMissing=false(기본)면 이미 동기화로 들어와 있는 행에 "
+                    + "ML 태그 필드만 채우는 백필 전용. createIfMissing=true면 매칭 안 되는 행을 새로 만들고, 이때 placeType이 새 행에 적용된다. JWT 필요.")
     @PostMapping("/import-csv")
     public ImportResult importCsv(
             @Parameter(description = "CSV 파일 경로 (리포 루트 기준 상대경로). 생략 시 병원 ML 태그 CSV를 백필용으로 사용")
             @RequestParam(required = false) String path,
             @Parameter(description = "true면 매칭 안 되는 행을 새로 생성한다 (숙소·관광명소 CSV처럼 살아있는 동기화 소스가 없는 경우)")
             @RequestParam(required = false, defaultValue = "false") boolean createIfMissing,
-            @Parameter(description = "createIfMissing=true일 때 새로 생성되는 행에 부여할 종류")
-            @RequestParam(required = false, defaultValue = "HOSPITAL") Place.PlaceType placeType) {
+            @Parameter(description = "createIfMissing=true일 때 새로 생성되는 행에 부여할 종류. ATTRACTION이면 attractions 테이블, 그 외는 hospitals_accommodations 테이블에 만들어진다.")
+            @RequestParam(required = false, defaultValue = "HOSPITAL") PlaceType placeType) {
         Path csvPath = Path.of(path != null ? path : DEFAULT_HOSPITAL_ML_TAG_CSV_PATH);
         return placeCsvImportService.importFrom(csvPath, createIfMissing, placeType);
     }

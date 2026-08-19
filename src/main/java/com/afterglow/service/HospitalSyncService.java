@@ -1,10 +1,11 @@
 package com.afterglow.service;
 
-import com.afterglow.domain.Place;
+import com.afterglow.domain.HospitalAccommodation;
+import com.afterglow.domain.PlaceType;
 import com.afterglow.kakao.KakaoPlace;
 import com.afterglow.kakao.KakaoPlaceClient;
 import com.afterglow.kakao.SeoulDistricts;
-import com.afterglow.repository.PlaceRepository;
+import com.afterglow.repository.HospitalAccommodationRepository;
 import com.afterglow.web.dto.MedicalTourismListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -22,12 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리)를 조합해 {@link Place} 테이블을 채운다.
+ * 관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리)를 조합해 {@link HospitalAccommodation}
+ * 테이블의 HOSPITAL 행만 채운다(ACCOMMODATION 행은 이 서비스가 절대 건드리지 않는다).
  * 범위는 강남구/서초구로 고정 (data/raw/ml_data의 CSV 백필과 같은 범위).
  *
  * <p>세 단계로 나뉜다.
  * <ol>
- *   <li>0단계: 강남구/서초구 밖 주소를 가진 기존 행을 정리한다(과거 서울 전체 동기화로
+ *   <li>0단계: 강남구/서초구 밖 주소를 가진 기존 HOSPITAL 행을 정리한다(과거 서울 전체 동기화로
  *       들어온 데이터를 이 범위로 되돌리기 위함).</li>
  *   <li>1단계: 관광공사 목록을 순회하며 각 항목을 카카오에서 검색.
  *       매칭되면 source=TOURISM_API+KAKAO, 안 되면 관광공사 원본 데이터만으로
@@ -52,15 +54,15 @@ public class HospitalSyncService {
 
     private final MedicalTourismService medicalTourismService;
     private final KakaoPlaceClient kakaoPlaceClient;
-    private final PlaceRepository placeRepository;
+    private final HospitalAccommodationRepository hospitalAccommodationRepository;
 
     public HospitalSyncService(
             MedicalTourismService medicalTourismService,
             KakaoPlaceClient kakaoPlaceClient,
-            PlaceRepository placeRepository) {
+            HospitalAccommodationRepository hospitalAccommodationRepository) {
         this.medicalTourismService = medicalTourismService;
         this.kakaoPlaceClient = kakaoPlaceClient;
-        this.placeRepository = placeRepository;
+        this.hospitalAccommodationRepository = hospitalAccommodationRepository;
     }
 
     @Transactional
@@ -89,7 +91,8 @@ public class HospitalSyncService {
     }
 
     /**
-     * 강남구/서초구 밖 데이터(과거 서울 전체 동기화 잔재)를 삭제한다.
+     * 강남구/서초구 밖 HOSPITAL 데이터(과거 서울 전체 동기화 잔재)를 삭제한다.
+     * ACCOMMODATION 행은 place_type으로 걸러내 절대 건드리지 않는다.
      * 카카오 출처가 있는 행(addressName이 항상 한글)은 주소 접두어로 판단하고,
      * TOURISM_API 단독 행은 addressName이 langDivCd와 무관하게 로마자 표기라
      * 텍스트로 판단할 수 없으므로, 이번에 새로 가져온 강남/서초 목록에 그
@@ -101,8 +104,11 @@ public class HospitalSyncService {
             validTourismContentIds.add(item.contentId());
         }
 
-        List<Place> outOfScope = new ArrayList<>();
-        for (Place place : placeRepository.findAll()) {
+        List<HospitalAccommodation> outOfScope = new ArrayList<>();
+        for (HospitalAccommodation place : hospitalAccommodationRepository.findAll()) {
+            if (place.getPlaceType() != PlaceType.HOSPITAL) {
+                continue; // ACCOMMODATION은 이 동기화 대상이 아니다
+            }
             if ("MANUAL".equals(place.getSource())) {
                 continue; // 관리 페이지에서 직접 추가한 건 범위와 무관하게 유지
             }
@@ -119,7 +125,7 @@ public class HospitalSyncService {
             }
         }
         if (!outOfScope.isEmpty()) {
-            placeRepository.deleteAll(outOfScope);
+            hospitalAccommodationRepository.deleteAll(outOfScope);
         }
         return outOfScope.size();
     }
@@ -152,9 +158,9 @@ public class HospitalSyncService {
     }
 
     private void upsertMatched(MedicalTourismListItem item, KakaoPlace kakaoPlace, String image, Instant syncedAt) {
-        Place place = placeRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
+        HospitalAccommodation place = hospitalAccommodationRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
         if (place == null) {
-            placeRepository.save(new Place(
+            hospitalAccommodationRepository.save(new HospitalAccommodation(
                     kakaoPlace.id(),
                     item.contentId(),
                     kakaoPlace.placeName(),
@@ -168,7 +174,7 @@ public class HospitalSyncService {
                     kakaoPlace.categoryGroupName(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
-                    Place.PlaceType.HOSPITAL,
+                    PlaceType.HOSPITAL,
                     SOURCE_BOTH,
                     syncedAt));
         } else {
@@ -197,10 +203,10 @@ public class HospitalSyncService {
             return;
         }
 
-        Place place = placeRepository.findByTourismContentId(item.contentId()).orElse(null);
+        HospitalAccommodation place = hospitalAccommodationRepository.findByTourismContentId(item.contentId()).orElse(null);
         String address = firstNonBlank(item.baseAddr(), item.detailAddr());
         if (place == null) {
-            placeRepository.save(new Place(
+            hospitalAccommodationRepository.save(new HospitalAccommodation(
                     null,
                     item.contentId(),
                     item.title(),
@@ -214,7 +220,7 @@ public class HospitalSyncService {
                     null,
                     item.tel(),
                     null,
-                    Place.PlaceType.HOSPITAL,
+                    PlaceType.HOSPITAL,
                     SOURCE_TOURISM_ONLY,
                     syncedAt));
         } else {
@@ -253,10 +259,10 @@ public class HospitalSyncService {
 
         int newlyCreated = 0;
         for (KakaoPlace place : deduped.values()) {
-            if (placeRepository.findByPlaceId(place.id()).isPresent()) {
+            if (hospitalAccommodationRepository.findByPlaceId(place.id()).isPresent()) {
                 continue; // 이미 1단계(관광공사 매칭)로 들어와 있음
             }
-            placeRepository.save(new Place(
+            hospitalAccommodationRepository.save(new HospitalAccommodation(
                     place.id(),
                     null,
                     place.placeName(),
@@ -270,7 +276,7 @@ public class HospitalSyncService {
                     place.categoryGroupName(),
                     place.phone(),
                     place.placeUrl(),
-                    Place.PlaceType.HOSPITAL,
+                    PlaceType.HOSPITAL,
                     SOURCE_KAKAO_ONLY,
                     syncedAt));
             newlyCreated++;

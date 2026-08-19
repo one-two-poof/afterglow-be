@@ -200,6 +200,7 @@
   const formError = document.getElementById('form-error');
 
   let editingId = null;
+  let editingPlaceType = null;
 
   function getToken() {
     return localStorage.getItem('afterglow_admin_jwt') || '';
@@ -344,8 +345,8 @@
     { label: '출처', render: (item) => escapeHtml(item.source || '') },
     { label: '마지막 동기화', render: (item) => (item.syncedAt ? new Date(item.syncedAt).toLocaleString('ko-KR') : '') },
     { label: '', cellClass: 'actions', render: (item) =>
-        `<button data-action="edit" data-id="${item.id}">수정</button>`
-        + `<button data-action="delete" data-id="${item.id}" class="danger">삭제</button>` },
+        `<button data-action="edit" data-id="${item.id}" data-place-type="${escapeAttr(item.placeType || '')}">수정</button>`
+        + `<button data-action="delete" data-id="${item.id}" data-place-type="${escapeAttr(item.placeType || '')}" class="danger">삭제</button>` },
   ];
 
   function formatBool(v) {
@@ -387,9 +388,10 @@
     const btn = e.target.closest('button');
     if (!btn) return;
     const id = btn.dataset.id;
+    const placeType = btn.dataset.placeType;
     if (btn.dataset.action === 'delete') {
       if (!confirm('정말 삭제하시겠습니까? (id=' + id + ')')) return;
-      const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`${API_BASE}/${id}?placeType=${placeType}`, { method: 'DELETE', headers: authHeaders() });
       if (res.status === 401 || res.status === 403) {
         alert('삭제 권한이 없습니다. JWT 토큰을 확인해주세요.');
         return;
@@ -400,7 +402,7 @@
       }
       loadPlaces(searchInput.value.trim());
     } else if (btn.dataset.action === 'edit') {
-      const res = await fetch(`${API_BASE}/${id}`);
+      const res = await fetch(`${API_BASE}/${id}?placeType=${placeType}`);
       if (!res.ok) { alert('불러오기 실패'); return; }
       const item = await res.json();
       openModal(item);
@@ -425,6 +427,7 @@
   function openModal(item) {
     formError.textContent = '';
     editingId = item ? item.id : null;
+    editingPlaceType = item ? item.placeType : null;
     modalTitle.textContent = item ? `장소 수정 (id=${item.id})` : '새 장소 추가';
     form.placeType.value = item?.placeType || 'HOSPITAL';
     form.placeId.value = item?.placeId || '';
@@ -488,7 +491,7 @@
       walkHard: form.walkHard.value.trim() === '' ? null : parseInt(form.walkHard.value, 10),
       isNa: selectValueToBool(form.isNa.value),
     };
-    const url = editingId ? `${API_BASE}/${editingId}` : API_BASE;
+    const url = editingId ? `${API_BASE}/${editingId}?placeType=${editingPlaceType}` : API_BASE;
     const method = editingId ? 'PUT' : 'POST';
     const res = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(payload) });
     if (res.status === 401 || res.status === 403) {

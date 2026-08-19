@@ -1,6 +1,8 @@
 package com.afterglow.web.dto;
 
-import com.afterglow.domain.Place;
+import com.afterglow.domain.Attraction;
+import com.afterglow.domain.HospitalAccommodation;
+import com.afterglow.domain.PlaceType;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -21,7 +23,7 @@ public record PlaceResponse(
         String source,
         boolean imageOverridden,
         Instant syncedAt,
-        Place.PlaceType placeType,
+        PlaceType placeType,
         String primaryType,
         String primaryTypeName,
         String collectionTypes,
@@ -33,7 +35,7 @@ public record PlaceResponse(
         Integer walkHard,
         Boolean isNa) {
 
-    public static PlaceResponse from(Place place) {
+    public static PlaceResponse from(HospitalAccommodation place) {
         return new PlaceResponse(
                 place.getId(),
                 place.getPlaceId(),
@@ -57,6 +59,37 @@ public record PlaceResponse(
                 place.getCollectionTypes(),
                 place.getSkinTreatmentConfidence(),
                 place.getSkinTreatmentSignals(),
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    public static PlaceResponse from(Attraction place) {
+        return new PlaceResponse(
+                place.getId(),
+                place.getPlaceId(),
+                null,
+                place.getPlaceName(),
+                place.getCategoryName(),
+                place.getCategoryGroupName(),
+                place.getAddressName(),
+                place.getRoadAddressName(),
+                place.getMapX(),
+                place.getMapY(),
+                place.getImageUrl(),
+                place.getPhone(),
+                place.getPlaceUrl(),
+                place.getSource(),
+                place.isImageUrlOverridden(),
+                place.getSyncedAt(),
+                PlaceType.ATTRACTION,
+                place.getPrimaryType(),
+                place.getPrimaryTypeName(),
+                place.getCollectionTypes(),
+                null,
+                null,
                 place.getIsIndoor(),
                 place.getIsHeatSource(),
                 place.getIsMassageSpot(),

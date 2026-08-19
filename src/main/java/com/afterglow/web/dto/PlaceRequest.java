@@ -1,6 +1,6 @@
 package com.afterglow.web.dto;
 
-import com.afterglow.domain.Place;
+import com.afterglow.domain.PlaceType;
 import java.math.BigDecimal;
 
 public record PlaceRequest(
@@ -25,5 +25,5 @@ public record PlaceRequest(
         Boolean isMassageSpot,
         Integer walkHard,
         Boolean isNa,
-        Place.PlaceType placeType) {
+        PlaceType placeType) {
 }

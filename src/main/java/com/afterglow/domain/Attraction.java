@@ -2,8 +2,6 @@ package com.afterglow.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -11,30 +9,22 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** 병원/숙소/관광명소 등을 통합해서 담는 장소 테이블. 종류 구분은 placeType으로 명시적으로 한다. */
+/**
+ * 관광명소 전용 테이블. place 테이블을 종류별로 쪼개면서 병원/숙소({@link HospitalAccommodation})와 분리했다.
+ * 도보 제약 ML 태그(is_indoor 등)는 관광명소 CSV에서만 채워진다.
+ * 관광공사 API로 들어온 적이 없는 카테고리라 tourism_content_id는 없다.
+ */
 @Entity
-@Table(name = "place")
-public class Place {
-
-    public enum PlaceType {
-        HOSPITAL, ACCOMMODATION, ATTRACTION
-    }
+@Table(name = "attractions")
+public class Attraction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "place_type", nullable = false, length = 16)
-    private PlaceType placeType;
-
-    /** 카카오 고유 ID. 관광공사에만 있고 카카오 매칭이 안 된 행은 null일 수 있다. */
+    /** 카카오 고유 ID. */
     @Column(name = "place_id", unique = true, length = 64)
     private String placeId;
-
-    /** 관광공사 contentId. 카카오 매칭이 안 됐을 때 재동기화 시 같은 행을 찾기 위한 키. */
-    @Column(name = "tourism_content_id", unique = true, length = 32)
-    private String tourismContentId;
 
     @Column(name = "place_name", nullable = false, length = 256)
     private String placeName;
@@ -60,8 +50,6 @@ public class Place {
     @Column(name = "image_url_overridden", nullable = false)
     private boolean imageUrlOverridden;
 
-    // --- 카카오 API가 이미 주는 필드 (동기화/CSV import 때 자동으로 채워짐) ---
-
     @Column(name = "category_group_code", length = 16)
     private String categoryGroupCode;
 
@@ -74,28 +62,16 @@ public class Place {
     @Column(name = "place_url", length = 512)
     private String placeUrl;
 
-    // --- 카카오/관광공사 어디에도 없는, CSV로만 채워지는 ML 태그 필드 ---
-
     @Column(name = "primary_type", length = 64)
     private String primaryType;
 
     @Column(name = "primary_type_name", length = 128)
     private String primaryTypeName;
 
-    /** "skin_treatment_hospital|hospital" 처럼 "|"로 구분된 다중 태그 원문 그대로 저장 */
     @Column(name = "collection_types", length = 256)
     private String collectionTypes;
 
-    @Column(name = "skin_treatment_confidence", length = 16)
-    private String skinTreatmentConfidence;
-
-    /** "리프팅|보톡스|울쎄라|피부레이저|필러" 처럼 "|"로 구분된 시술 키워드 원문 그대로 저장 */
-    @Column(name = "skin_treatment_signals", length = 512)
-    private String skinTreatmentSignals;
-
-    // --- 코스 추천용 도보 제약 태그 (CSV로만 채워짐, 카카오/관광공사 어디에도 없음) ---
-
-    /** 실내 여부. CSV에 없는 카테고리(병원 등)는 null. */
+    /** 실내 여부. */
     @Column(name = "is_indoor")
     private Boolean isIndoor;
 
@@ -115,22 +91,18 @@ public class Place {
     @Column(name = "is_na")
     private Boolean isNa;
 
-    /**
-     * TOURISM_API+KAKAO(병원, 관광공사+카카오 둘 다 매칭) / TOURISM_API(병원, 관광공사만) /
-     * KAKAO(병원, 카카오만) / CSV_IMPORT(숙소 등 CSV 통째로 import) / MANUAL(관리 페이지 직접 입력)
-     */
+    /** CSV_IMPORT(CSV 통째로 import) / MANUAL(관리 페이지 직접 입력) */
     @Column(nullable = false, length = 32)
     private String source;
 
     @Column(name = "synced_at", nullable = false)
     private Instant syncedAt;
 
-    protected Place() {
+    protected Attraction() {
     }
 
-    public Place(
+    public Attraction(
             String placeId,
-            String tourismContentId,
             String placeName,
             String categoryName,
             String addressName,
@@ -142,11 +114,9 @@ public class Place {
             String categoryGroupName,
             String phone,
             String placeUrl,
-            PlaceType placeType,
             String source,
             Instant syncedAt) {
         this.placeId = placeId;
-        this.tourismContentId = tourismContentId;
         this.placeName = placeName;
         this.categoryName = categoryName;
         this.addressName = addressName;
@@ -159,64 +129,15 @@ public class Place {
         this.categoryGroupName = categoryGroupName;
         this.phone = phone;
         this.placeUrl = placeUrl;
-        this.placeType = placeType;
         this.source = source;
         this.syncedAt = syncedAt;
     }
 
-    /**
-     * API 재동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않고,
-     * override되지 않았더라도 이번 응답에 이미지가 없으면(관광공사 상당수가 그렇다)
-     * 기존 값을 지우지 않고 그대로 둔다 — 값이 있을 때만 교체한다.
-     */
-    public void updateFromSync(
-            String placeName,
-            String categoryName,
-            String addressName,
-            String roadAddressName,
-            BigDecimal mapX,
-            BigDecimal mapY,
-            String imageUrl,
-            String categoryGroupCode,
-            String categoryGroupName,
-            String phone,
-            String placeUrl,
-            String source,
-            Instant syncedAt) {
-        this.placeName = placeName;
-        this.categoryName = categoryName;
-        this.addressName = addressName;
-        this.roadAddressName = roadAddressName;
-        this.mapX = mapX;
-        this.mapY = mapY;
-        if (!this.imageUrlOverridden && imageUrl != null && !imageUrl.isBlank()) {
-            this.imageUrl = imageUrl;
-        }
-        this.categoryGroupCode = categoryGroupCode;
-        this.categoryGroupName = categoryGroupName;
-        this.phone = phone;
-        this.placeUrl = placeUrl;
-        this.source = source;
-        this.syncedAt = syncedAt;
-    }
-
-    /** Notion 등에서 이미지 수동 입력. 이후 updateFromSync가 imageUrl을 덮어쓰지 않는다. */
-    public void overrideImageUrl(String imageUrl) {
-        this.imageUrl = imageUrl;
-        this.imageUrlOverridden = true;
-    }
-
-    /**
-     * ML 태그 CSV 백필 전용. 카카오/관광공사 동기화는 이 필드들을 절대 건드리지 않는다.
-     * 도보 제약 5종(isIndoor 등)은 gangnam_seocho_places_with_constraints.csv에만 있고
-     * 병원 CSV(gangnam_seocho_hospital_db.csv)에는 없는 컬럼이라 null이 그대로 들어올 수 있다.
-     */
+    /** ML 태그 CSV 백필 전용. */
     public void applyMlTags(
             String primaryType,
             String primaryTypeName,
             String collectionTypes,
-            String skinTreatmentConfidence,
-            String skinTreatmentSignals,
             Boolean isIndoor,
             Boolean isHeatSource,
             Boolean isMassageSpot,
@@ -225,8 +146,6 @@ public class Place {
         this.primaryType = primaryType;
         this.primaryTypeName = primaryTypeName;
         this.collectionTypes = collectionTypes;
-        this.skinTreatmentConfidence = skinTreatmentConfidence;
-        this.skinTreatmentSignals = skinTreatmentSignals;
         this.isIndoor = isIndoor;
         this.isHeatSource = isHeatSource;
         this.isMassageSpot = isMassageSpot;
@@ -234,8 +153,8 @@ public class Place {
         this.isNa = isNa;
     }
 
-    /** CSV 통째로 import (예: 숙소) — 기존 행이 없을 때 새로 만드는 용도. */
-    public static Place fromCsvRow(
+    /** CSV 통째로 import — 기존 행이 없을 때 새로 만드는 용도. */
+    public static Attraction fromCsvRow(
             String placeId,
             String placeName,
             String categoryName,
@@ -247,12 +166,11 @@ public class Place {
             String placeUrl,
             BigDecimal mapX,
             BigDecimal mapY,
-            PlaceType placeType,
             Instant syncedAt) {
-        return new Place(
-                placeId, null, placeName, categoryName, addressName, roadAddressName,
+        return new Attraction(
+                placeId, placeName, categoryName, addressName, roadAddressName,
                 mapX, mapY, null, categoryGroupCode, categoryGroupName, phone, placeUrl,
-                placeType, "CSV_IMPORT", syncedAt);
+                "CSV_IMPORT", syncedAt);
     }
 
     /** 관리 페이지에서 사람이 직접 수정. 항상 전체 덮어쓰고, image는 이후 자동 동기화가 건드리지 않는다. */
@@ -266,8 +184,7 @@ public class Place {
             BigDecimal mapY,
             String imageUrl,
             String phone,
-            String placeUrl,
-            PlaceType placeType) {
+            String placeUrl) {
         this.placeName = placeName;
         this.categoryName = categoryName;
         this.categoryGroupName = categoryGroupName;
@@ -279,16 +196,11 @@ public class Place {
         this.imageUrlOverridden = true;
         this.phone = phone;
         this.placeUrl = placeUrl;
-        if (placeType != null) {
-            this.placeType = placeType;
-        }
         this.syncedAt = Instant.now();
     }
 
     public Long getId() { return id; }
-    public PlaceType getPlaceType() { return placeType; }
     public String getPlaceId() { return placeId; }
-    public String getTourismContentId() { return tourismContentId; }
     public String getPlaceName() { return placeName; }
     public String getCategoryName() { return categoryName; }
     public String getAddressName() { return addressName; }
@@ -304,8 +216,6 @@ public class Place {
     public String getPrimaryType() { return primaryType; }
     public String getPrimaryTypeName() { return primaryTypeName; }
     public String getCollectionTypes() { return collectionTypes; }
-    public String getSkinTreatmentConfidence() { return skinTreatmentConfidence; }
-    public String getSkinTreatmentSignals() { return skinTreatmentSignals; }
     public Boolean getIsIndoor() { return isIndoor; }
     public Boolean getIsHeatSource() { return isHeatSource; }
     public Boolean getIsMassageSpot() { return isMassageSpot; }
