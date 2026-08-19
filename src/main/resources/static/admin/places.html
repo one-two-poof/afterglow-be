@@ -139,11 +139,44 @@
       <div class="field"><label>place_id (카카오 고유 ID)</label><input name="placeId" required></div>
       <div class="field"><label>장소명 *</label><input name="placeName" required></div>
       <div class="field"><label>카테고리</label><input name="categoryName" placeholder="문화,예술 > 영화 > CGV"></div>
+      <div class="field"><label>카테고리 그룹명 (categoryGroupName)</label><input name="categoryGroupName" placeholder="문화시설"></div>
       <div class="field"><label>기본 주소</label><input name="addressName"></div>
       <div class="field"><label>도로명 주소</label><input name="roadAddressName"></div>
       <div class="field"><label>위도 (mapY) *</label><input name="mapY" type="number" step="any" required></div>
       <div class="field"><label>경도 (mapX) *</label><input name="mapX" type="number" step="any" required></div>
       <div class="field"><label>이미지 URL</label><input name="image"></div>
+      <div class="field"><label>전화번호</label><input name="phone"></div>
+      <div class="field"><label>장소 URL</label><input name="placeUrl" placeholder="http://place.map.kakao.com/..."></div>
+
+      <div class="field" style="border-top:1px solid var(--border); padding-top:12px; margin-top:4px;">
+        <label style="color:var(--ink); font-weight:600;">ML 태그 / 도보 제약 (선택)</label>
+      </div>
+      <div class="field"><label>주 용도 코드 (primaryType)</label><input name="primaryType" placeholder="cultural_facility"></div>
+      <div class="field"><label>주 용도명 (primaryTypeName)</label><input name="primaryTypeName" placeholder="문화시설"></div>
+      <div class="field"><label>태그 모음 (collectionTypes)</label><input name="collectionTypes"></div>
+      <div class="field"><label>피부시술 신뢰도</label><input name="skinTreatmentConfidence"></div>
+      <div class="field"><label>시술 키워드 (| 구분)</label><input name="skinTreatmentSignals" placeholder="리프팅|보톡스|필러"></div>
+      <div class="field"><label>실내 여부</label>
+        <select name="isIndoor" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit;">
+          <option value="">미설정</option><option value="true">예</option><option value="false">아니오</option>
+        </select>
+      </div>
+      <div class="field"><label>발열원 여부</label>
+        <select name="isHeatSource" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit;">
+          <option value="">미설정</option><option value="true">예</option><option value="false">아니오</option>
+        </select>
+      </div>
+      <div class="field"><label>마사지 적합 여부</label>
+        <select name="isMassageSpot" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit;">
+          <option value="">미설정</option><option value="true">예</option><option value="false">아니오</option>
+        </select>
+      </div>
+      <div class="field"><label>도보 난이도 (1~5)</label><input name="walkHard" type="number" step="1" min="1" max="5"></div>
+      <div class="field"><label>결측 플래그</label>
+        <select name="isNa" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit;">
+          <option value="">미설정</option><option value="true">예</option><option value="false">아니오</option>
+        </select>
+      </div>
       <div class="error-msg" id="form-error"></div>
       <div class="modal-actions">
         <button type="button" id="cancel-btn">취소</button>
@@ -378,6 +411,17 @@
   document.getElementById('cancel-btn').addEventListener('click', closeModal);
   modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
 
+  function boolToSelectValue(v) {
+    if (v === true) return 'true';
+    if (v === false) return 'false';
+    return '';
+  }
+  function selectValueToBool(v) {
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    return null;
+  }
+
   function openModal(item) {
     formError.textContent = '';
     editingId = item ? item.id : null;
@@ -387,11 +431,24 @@
     form.placeId.disabled = !!item; // place_id는 수정 시 변경 불가 (매칭 키)
     form.placeName.value = item?.placeName || '';
     form.categoryName.value = item?.categoryName || '';
+    form.categoryGroupName.value = item?.categoryGroupName || '';
     form.addressName.value = item?.addressName || '';
     form.roadAddressName.value = item?.roadAddressName || '';
     form.mapY.value = item?.mapY ?? '';
     form.mapX.value = item?.mapX ?? '';
     form.image.value = item?.image || '';
+    form.phone.value = item?.phone || '';
+    form.placeUrl.value = item?.placeUrl || '';
+    form.primaryType.value = item?.primaryType || '';
+    form.primaryTypeName.value = item?.primaryTypeName || '';
+    form.collectionTypes.value = item?.collectionTypes || '';
+    form.skinTreatmentConfidence.value = item?.skinTreatmentConfidence || '';
+    form.skinTreatmentSignals.value = item?.skinTreatmentSignals || '';
+    form.isIndoor.value = boolToSelectValue(item?.isIndoor);
+    form.isHeatSource.value = boolToSelectValue(item?.isHeatSource);
+    form.isMassageSpot.value = boolToSelectValue(item?.isMassageSpot);
+    form.walkHard.value = item?.walkHard ?? '';
+    form.isNa.value = boolToSelectValue(item?.isNa);
     modalBackdrop.classList.add('open');
   }
 
@@ -412,11 +469,24 @@
       placeId: form.placeId.value.trim(),
       placeName: form.placeName.value.trim(),
       categoryName: form.categoryName.value.trim() || null,
+      categoryGroupName: form.categoryGroupName.value.trim() || null,
       addressName: form.addressName.value.trim() || null,
       roadAddressName: form.roadAddressName.value.trim() || null,
       mapY: parseFloat(form.mapY.value),
       mapX: parseFloat(form.mapX.value),
       image: form.image.value.trim() || null,
+      phone: form.phone.value.trim() || null,
+      placeUrl: form.placeUrl.value.trim() || null,
+      primaryType: form.primaryType.value.trim() || null,
+      primaryTypeName: form.primaryTypeName.value.trim() || null,
+      collectionTypes: form.collectionTypes.value.trim() || null,
+      skinTreatmentConfidence: form.skinTreatmentConfidence.value.trim() || null,
+      skinTreatmentSignals: form.skinTreatmentSignals.value.trim() || null,
+      isIndoor: selectValueToBool(form.isIndoor.value),
+      isHeatSource: selectValueToBool(form.isHeatSource.value),
+      isMassageSpot: selectValueToBool(form.isMassageSpot.value),
+      walkHard: form.walkHard.value.trim() === '' ? null : parseInt(form.walkHard.value, 10),
+      isNa: selectValueToBool(form.isNa.value),
     };
     const url = editingId ? `${API_BASE}/${editingId}` : API_BASE;
     const method = editingId ? 'PUT' : 'POST';

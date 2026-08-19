@@ -30,6 +30,16 @@ public class PlaceService {
                 .toList();
     }
 
+    public List<PlaceResponse> listByType(Place.PlaceType placeType, String name) {
+        List<Place> places = StringUtils.hasText(name)
+                ? placeRepository.findByPlaceTypeAndPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(
+                        placeType, name.trim())
+                : placeRepository.findByPlaceTypeOrderByPlaceNameAsc(placeType);
+        return places.stream()
+                .map(PlaceResponse::from)
+                .toList();
+    }
+
     public PlaceResponse getOne(Long id) {
         return PlaceResponse.from(findOrThrow(id));
     }
@@ -47,12 +57,23 @@ public class PlaceService {
                 request.mapY(),
                 request.image(),
                 null,
-                null,
-                null,
-                null,
+                request.categoryGroupName(),
+                request.phone(),
+                request.placeUrl(),
                 request.placeType() != null ? request.placeType() : Place.PlaceType.ATTRACTION,
                 "MANUAL",
                 Instant.now());
+        place.applyMlTags(
+                request.primaryType(),
+                request.primaryTypeName(),
+                request.collectionTypes(),
+                request.skinTreatmentConfidence(),
+                request.skinTreatmentSignals(),
+                request.isIndoor(),
+                request.isHeatSource(),
+                request.isMassageSpot(),
+                request.walkHard(),
+                request.isNa());
         return PlaceResponse.from(placeRepository.save(place));
     }
 
@@ -62,12 +83,26 @@ public class PlaceService {
         place.applyAdminEdit(
                 request.placeName(),
                 request.categoryName(),
+                request.categoryGroupName(),
                 request.addressName(),
                 request.roadAddressName(),
                 request.mapX(),
                 request.mapY(),
                 request.image(),
+                request.phone(),
+                request.placeUrl(),
                 request.placeType());
+        place.applyMlTags(
+                request.primaryType(),
+                request.primaryTypeName(),
+                request.collectionTypes(),
+                request.skinTreatmentConfidence(),
+                request.skinTreatmentSignals(),
+                request.isIndoor(),
+                request.isHeatSource(),
+                request.isMassageSpot(),
+                request.walkHard(),
+                request.isNa());
         return PlaceResponse.from(place);
     }
 

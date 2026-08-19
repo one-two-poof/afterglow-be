@@ -259,20 +259,26 @@ public class Place {
     public void applyAdminEdit(
             String placeName,
             String categoryName,
+            String categoryGroupName,
             String addressName,
             String roadAddressName,
             BigDecimal mapX,
             BigDecimal mapY,
             String imageUrl,
+            String phone,
+            String placeUrl,
             PlaceType placeType) {
         this.placeName = placeName;
         this.categoryName = categoryName;
+        this.categoryGroupName = categoryGroupName;
         this.addressName = addressName;
         this.roadAddressName = roadAddressName;
         this.mapX = mapX;
         this.mapY = mapY;
         this.imageUrl = imageUrl;
         this.imageUrlOverridden = true;
+        this.phone = phone;
+        this.placeUrl = placeUrl;
         if (placeType != null) {
             this.placeType = placeType;
         }

@@ -158,7 +158,7 @@ public class HospitalSyncService {
                     kakaoPlace.id(),
                     item.contentId(),
                     kakaoPlace.placeName(),
-                    kakaoPlace.categoryName(),
+                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
                     kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
@@ -174,7 +174,7 @@ public class HospitalSyncService {
         } else {
             place.updateFromSync(
                     kakaoPlace.placeName(),
-                    kakaoPlace.categoryName(),
+                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
                     kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
@@ -260,7 +260,7 @@ public class HospitalSyncService {
                     place.id(),
                     null,
                     place.placeName(),
-                    place.categoryName(),
+                    place.categoryGroupName(),
                     place.addressName(),
                     place.roadAddressName(),
                     place.mapX(),

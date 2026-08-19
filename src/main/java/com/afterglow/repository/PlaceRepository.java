@@ -14,4 +14,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     List<Place> findAllByOrderByPlaceNameAsc();
 
     List<Place> findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(String placeName);
+
+    List<Place> findByPlaceTypeOrderByPlaceNameAsc(Place.PlaceType placeType);
+
+    List<Place> findByPlaceTypeAndPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(
+            Place.PlaceType placeType, String placeName);
 }

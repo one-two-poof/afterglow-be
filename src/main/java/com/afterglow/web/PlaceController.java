@@ -70,6 +70,36 @@ public class PlaceController {
     }
 
     @Operation(
+            summary = "병원 목록 조회",
+            description = "placeType=HOSPITAL만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+    @GetMapping("/hospital")
+    public List<PlaceResponse> listHospitals(
+            @Parameter(description = "장소명 부분 검색어 (생략 시 병원 전체)")
+            @RequestParam(required = false) String name) {
+        return placeService.listByType(Place.PlaceType.HOSPITAL, name);
+    }
+
+    @Operation(
+            summary = "숙소 목록 조회",
+            description = "placeType=ACCOMMODATION만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+    @GetMapping("/accommodation")
+    public List<PlaceResponse> listAccommodations(
+            @Parameter(description = "장소명 부분 검색어 (생략 시 숙소 전체)")
+            @RequestParam(required = false) String name) {
+        return placeService.listByType(Place.PlaceType.ACCOMMODATION, name);
+    }
+
+    @Operation(
+            summary = "관광명소 목록 조회",
+            description = "placeType=ATTRACTION만 필터링한 목록. name을 주면 그 안에서 장소명 부분 일치(대소문자 무시)로 검색한다. 인증 불필요.")
+    @GetMapping("/attraction")
+    public List<PlaceResponse> listAttractions(
+            @Parameter(description = "장소명 부분 검색어 (생략 시 관광명소 전체)")
+            @RequestParam(required = false) String name) {
+        return placeService.listByType(Place.PlaceType.ATTRACTION, name);
+    }
+
+    @Operation(
             summary = "장소 수동 추가 (관리자)",
             description = "관리 페이지에서 사람이 직접 새 장소를 추가한다. placeType(HOSPITAL/ACCOMMODATION/ATTRACTION)을 지정해야 한다. JWT 필요.")
     @PostMapping
