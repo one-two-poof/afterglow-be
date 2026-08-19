@@ -26,6 +26,9 @@ public class JwtProvider {
         Date now = new Date();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
+                // ML 서버(app/utils/security.py)가 sub가 아니라 커스텀 "id" 클레임을 요구해서
+                // 같이 넣어준다 — sub는 이 앱 내부(JwtAuthenticationFilter)에서 계속 사용.
+                .claim("id", userId)
                 .claim("email", email)
                 .claim("role", role)
                 .issuedAt(now)
