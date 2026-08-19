@@ -7,26 +7,22 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 
-/** daily_recommendations 배열의 원소 1개 = 날짜 1건 (출발지 포함, 코스는 별도 테이블). */
+/** daily_schedules 배열의 원소 1개 = 코스 안 날짜 1건 (출발지 포함, 장소는 별도 테이블). */
 @Entity
-@Table(name = "trip_daily_recommendations")
-public class TripDailyRecommendation {
+@Table(name = "trip_daily_schedules")
+public class TripDailySchedule {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
+    @Column(name = "recommended_course_id", nullable = false)
+    private Long recommendedCourseId;
 
-    @Column(name = "requested_at", nullable = false, updatable = false)
-    private Instant requestedAt;
-
-    @Column(name = "rec_date", nullable = false)
-    private LocalDate recDate;
+    @Column(name = "schedule_date", nullable = false)
+    private LocalDate scheduleDate;
 
     @Column(name = "start_location_name", nullable = false, length = 256)
     private String startLocationName;
@@ -37,28 +33,25 @@ public class TripDailyRecommendation {
     @Column(name = "start_location_map_y", nullable = false, precision = 12, scale = 8)
     private BigDecimal startLocationMapY;
 
-    protected TripDailyRecommendation() {
+    protected TripDailySchedule() {
     }
 
-    public TripDailyRecommendation(
-            Long userId,
-            Instant requestedAt,
-            LocalDate recDate,
+    public TripDailySchedule(
+            Long recommendedCourseId,
+            LocalDate scheduleDate,
             String startLocationName,
             BigDecimal startLocationMapX,
             BigDecimal startLocationMapY) {
-        this.userId = userId;
-        this.requestedAt = requestedAt;
-        this.recDate = recDate;
+        this.recommendedCourseId = recommendedCourseId;
+        this.scheduleDate = scheduleDate;
         this.startLocationName = startLocationName;
         this.startLocationMapX = startLocationMapX;
         this.startLocationMapY = startLocationMapY;
     }
 
     public Long getId() { return id; }
-    public Long getUserId() { return userId; }
-    public Instant getRequestedAt() { return requestedAt; }
-    public LocalDate getRecDate() { return recDate; }
+    public Long getRecommendedCourseId() { return recommendedCourseId; }
+    public LocalDate getScheduleDate() { return scheduleDate; }
     public String getStartLocationName() { return startLocationName; }
     public BigDecimal getStartLocationMapX() { return startLocationMapX; }
     public BigDecimal getStartLocationMapY() { return startLocationMapY; }

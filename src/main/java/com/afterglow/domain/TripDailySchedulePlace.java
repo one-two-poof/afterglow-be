@@ -8,17 +8,17 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
-/** places 배열의 원소 1개 = 코스 안 방문 순서별 장소. */
+/** places 배열의 원소 1개 = 일정 안 방문 순서별 장소. */
 @Entity
-@Table(name = "trip_daily_course_places")
-public class TripDailyCoursePlace {
+@Table(name = "trip_daily_schedule_places")
+public class TripDailySchedulePlace {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "daily_course_id", nullable = false)
-    private Long dailyCourseId;
+    @Column(name = "daily_schedule_id", nullable = false)
+    private Long dailyScheduleId;
 
     @Column(name = "visit_order", nullable = false)
     private int visitOrder;
@@ -44,11 +44,11 @@ public class TripDailyCoursePlace {
     @Column(name = "dist_to_prev_km", nullable = false, precision = 6, scale = 2)
     private BigDecimal distToPrevKm;
 
-    protected TripDailyCoursePlace() {
+    protected TripDailySchedulePlace() {
     }
 
-    public TripDailyCoursePlace(
-            Long dailyCourseId,
+    public TripDailySchedulePlace(
+            Long dailyScheduleId,
             int visitOrder,
             String placeName,
             String placeCategory,
@@ -57,7 +57,7 @@ public class TripDailyCoursePlace {
             boolean indoor,
             int walkHard,
             BigDecimal distToPrevKm) {
-        this.dailyCourseId = dailyCourseId;
+        this.dailyScheduleId = dailyScheduleId;
         this.visitOrder = visitOrder;
         this.placeName = placeName;
         this.placeCategory = placeCategory;
@@ -69,7 +69,7 @@ public class TripDailyCoursePlace {
     }
 
     public Long getId() { return id; }
-    public Long getDailyCourseId() { return dailyCourseId; }
+    public Long getDailyScheduleId() { return dailyScheduleId; }
     public int getVisitOrder() { return visitOrder; }
     public String getPlaceName() { return placeName; }
     public String getPlaceCategory() { return placeCategory; }
