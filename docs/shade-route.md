@@ -47,6 +47,7 @@
 ## 명령어
 - 배치 실행: `cd batch && python -m src.main`
 - 서버: 리포 루트 Afterglow 백엔드에 `com.afterglow.shaderoute` 패키지로 흡수됨 (`src/main/java/com/afterglow/shaderoute`, 정적 프론트는 `src/main/resources/static/index.html`). `./gradlew bootRun` (포트 8080) 하나로 같이 뜬다. 독립 `server/` 프로젝트는 더 이상 없음.
+
 ## 결정 로그
 
 이 문서의 "핵심 설계"와 "하지 말 것"은 고정 규칙이다.
@@ -117,3 +118,31 @@
 - 후속 과제: 저고도에서 그늘 비율을 부드럽게 감쇠시키면(대기 통과 거리 증가로
   직사광이 약해지는 것을 반영) 불연속 자체가 사라진다. 물리적으로 더 타당한 해법이나
   구현·검증 비용이 있어 범위 차단을 먼저 적용한다
+
+## TODO
+
+(없음)
+
+### 해결됨: edges.geojson 역방향 엣지 좌표 미반전 (2026-08-21)
+
+- 증상이었던 것: 양방향 도로의 역방향 엣지가 u/v 라벨만 뒤집고 좌표 배열은
+  그대로 복사돼 있어 "엣지 LineString의 첫/끝 좌표 = 노드 u/v 좌표" 불변식을
+  위반(엣지 50%). `/api/route` 응답에서 경로가 되돌아오는 것처럼 렌더링되는
+  원인이었음.
+- 원인: `batch/src/wsl_extract_network.py`의 `extract_gu_walk_network()` —
+  pyrosm이 `osm.to_graph()`에서 양방향 OSM way마다 (u,v)/(v,u) 두 방향 엣지를
+  만들며 geometry 속성을 반전 없이 그대로 재사용함. (최초 조사 시
+  `batch/src/graph.py`로 잘못 지목했었음 — 이 파일은 이미 만들어진 GeoPackage를
+  읽기만 할 뿐 u/v나 엣지 생성 로직이 없다.)
+- 근본 수정: `fix_edge_direction()` 헬퍼를 `wsl_extract_network.py`에 추가해
+  `extract_gu_walk_network()`(향후 신규 추출용)와 `merge_gu_extracts()`(이미
+  캐시된 25개 구 추출 결과에 즉시 적용)에서 호출. 좌표가 v/u 순서로 뒤집혀
+  있으면 반전하고, u/v 어느 쪽과도 안 맞으면 조용히 넘어가지 않고 경고 출력.
+- 검증: `batch/debug/edge_direction_before.txt`(위반 50.00%, 1,145,124개 엣지) →
+  WSL 재실행(25개 구 모두 캐시 스킵, 병합 시점 보정만 재실행, 불일치 0개) →
+  `python -m src.main` 재실행(그림자 계산은 캐시 재사용돼 5.7분만 소요) →
+  `batch/debug/edge_direction_after.txt`(위반 0.00%). TODO에 언급된 실제 사례
+  (edge_id 16625/16880, 노드 4542512111↔3251228173)도 직접 확인 — 두 엣지가
+  이제 서로 반대 방향 좌표를 가지며 각자 u/v와 일치함.
+- 범위에서 제외: 서버 방어(`ShadeGraph.loadEdges()`의 u/v 대조 반전 로직)는
+  근본 수정으로 불필요해져 적용하지 않음.

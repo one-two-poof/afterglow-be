@@ -43,6 +43,7 @@ import numpy as np
 import osmnx as ox
 import pandas as pd
 import pyrosm
+import shapely
 
 TARGET_CRS_EPSG = 5186
 BUFFER_M_FOR_EXTRACTION = 2000.0  # pyrosm bbox에 여유를 둬 구 경계 근처 연결성을 확보
@@ -60,6 +61,58 @@ def _gu_extract_paths(gu_name: str) -> tuple[str, str]:
     edges_path = os.path.join(GU_EXTRACT_DIR, f"{gu_name}_edges.gpkg")
     nodes_path = os.path.join(GU_EXTRACT_DIR, f"{gu_name}_nodes.gpkg")
     return edges_path, nodes_path
+
+
+def fix_edge_direction(
+    edges: gpd.GeoDataFrame, node_xy: pd.DataFrame, tol: float | None = None, label: str = ""
+) -> gpd.GeoDataFrame:
+    """엣지 LineString의 첫/끝 좌표가 u/v 노드 좌표와 일치하도록 필요한 엣지만 반전한다.
+
+    pyrosm.to_graph()가 양방향 도로의 역방향 엣지를 만들 때 u/v 라벨만 뒤집고
+    geometry는 정방향 것을 그대로 재사용해서 생기는 불변식 위반(edges.geojson의
+    좌표 = u/v 노드 좌표) 을 여기서 바로잡는다. node_xy는 edges.geometry와 같은
+    CRS여야 한다(호출부 책임) — columns: node_id, nx, ny.
+    """
+    if tol is None:
+        tol = 1e-8 if edges.crs.is_geographic else 1e-6
+
+    geoms = edges.geometry.to_numpy()
+    first_x = shapely.get_x(shapely.get_point(geoms, 0))
+    first_y = shapely.get_y(shapely.get_point(geoms, 0))
+    last_x = shapely.get_x(shapely.get_point(geoms, -1))
+    last_y = shapely.get_y(shapely.get_point(geoms, -1))
+
+    u_xy = edges[["u"]].merge(node_xy, left_on="u", right_on="node_id", how="left")
+    v_xy = edges[["v"]].merge(node_xy, left_on="v", right_on="node_id", how="left")
+    ux, uy = u_xy["nx"].to_numpy(), u_xy["ny"].to_numpy()
+    vx, vy = v_xy["nx"].to_numpy(), v_xy["ny"].to_numpy()
+
+    forward_ok = (np.abs(first_x - ux) < tol) & (np.abs(first_y - uy) < tol) & \
+        (np.abs(last_x - vx) < tol) & (np.abs(last_y - vy) < tol)
+    reversed_ok = (np.abs(first_x - vx) < tol) & (np.abs(first_y - vy) < tol) & \
+        (np.abs(last_x - ux) < tol) & (np.abs(last_y - uy) < tol)
+    self_loop = (edges["u"].to_numpy() == edges["v"].to_numpy())
+
+    need_reverse = reversed_ok & ~forward_ok & ~self_loop
+    unmatched = ~forward_ok & ~reversed_ok & ~self_loop
+
+    if need_reverse.any():
+        geoms = geoms.copy()
+        geoms[need_reverse] = shapely.reverse(geoms[need_reverse])
+        edges = edges.copy()
+        edges["geometry"] = gpd.GeoSeries(geoms, index=edges.index, crs=edges.crs)
+
+    prefix = f"[{label}] " if label else ""
+    print(
+        f"  {prefix}엣지 방향 보정: 반전 {int(need_reverse.sum())}개, "
+        f"불일치(u/v 어느쪽과도 안 맞음) {int(unmatched.sum())}개 / 전체 {len(edges)}개",
+        flush=True,
+    )
+    if unmatched.any():
+        bad_ids = edges.loc[unmatched, "u"].astype(str) + "->" + edges.loc[unmatched, "v"].astype(str)
+        print(f"  {prefix}경고: u/v 좌표와 불일치하는 엣지 예시: {list(bad_ids.head(5))}", flush=True)
+
+    return edges
 
 
 def extract_gu_walk_network(
@@ -81,7 +134,14 @@ def extract_gu_walk_network(
     # ox.project_graph()는 쓰지 않는다 — pyrosm 그래프에서는 G.graph['crs'] 메타데이터만
     # 바뀌고 실제 엣지 좌표는 lon/lat 그대로 남는 상호운용성 버그가 있다(실측 확인).
     edges_4326 = ox.graph_to_gdfs(G, nodes=False, edges=True).reset_index()
-    edges_5186 = edges_4326.set_crs(epsg=4326, allow_override=True).to_crs(epsg=TARGET_CRS_EPSG)
+    edges_4326 = edges_4326.set_crs(epsg=4326, allow_override=True)
+    node_xy_4326 = pd.DataFrame({
+        "node_id": nodes_4326.index,
+        "nx": nodes_4326.geometry.x.to_numpy(),
+        "ny": nodes_4326.geometry.y.to_numpy(),
+    })
+    edges_4326 = fix_edge_direction(edges_4326, node_xy_4326, label=gu_name)
+    edges_5186 = edges_4326.to_crs(epsg=TARGET_CRS_EPSG)
     edges_5186["length"] = edges_5186.geometry.length
 
     own_boundary_union = gu_5186.geometry.union_all()
@@ -141,8 +201,22 @@ def merge_gu_extracts(
         edges_path, nodes_path = _gu_extract_paths(gu_name)
         if not (os.path.exists(edges_path) and os.path.exists(nodes_path)):
             raise FileNotFoundError(f"{gu_name} 추출 결과가 없습니다. extract_all_gu()를 먼저 실행하세요.")
-        all_edges.append(gpd.read_file(edges_path))
-        all_nodes.append(gpd.read_file(nodes_path))
+        gu_edges = gpd.read_file(edges_path)
+        gu_nodes = gpd.read_file(nodes_path)
+
+        # 캐시된 per-gu 추출 결과는 이 수정 이전에 만들어졌을 수 있어 역방향 엣지
+        # 좌표가 아직 안 고쳐져 있을 수 있다 — pyrosm 재추출(구당 250~985초) 없이
+        # 여기서 병합 시점에 다시 보정해 이미 캐시된 25개 구 전체에 적용한다.
+        gu_nodes_same_crs = gu_nodes.to_crs(gu_edges.crs)
+        node_xy = pd.DataFrame({
+            "node_id": gu_nodes_same_crs["osmid"],
+            "nx": gu_nodes_same_crs.geometry.x.to_numpy(),
+            "ny": gu_nodes_same_crs.geometry.y.to_numpy(),
+        })
+        gu_edges = fix_edge_direction(gu_edges, node_xy, label=gu_name)
+
+        all_edges.append(gu_edges)
+        all_nodes.append(gu_nodes)
 
     edges_5186 = gpd.GeoDataFrame(pd.concat(all_edges, ignore_index=True), crs=all_edges[0].crs)
     edges_5186["edge_id"] = np.arange(len(edges_5186))
