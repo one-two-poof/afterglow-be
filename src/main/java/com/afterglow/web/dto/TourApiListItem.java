@@ -13,7 +13,10 @@ public record TourApiListItem(
         String firstImage,
         String mapX,
         String mapY,
-        String sigunguCode) {
+        String sigunguCode,
+        String cat1,
+        String cat2,
+        String cat3) {
 
     public static TourApiListItem from(JsonNode node) {
         return new TourApiListItem(
@@ -26,6 +29,9 @@ public record TourApiListItem(
                 node.path("firstimage").asText(""),
                 node.path("mapx").asText(""),
                 node.path("mapy").asText(""),
-                node.path("sigungucode").asText(""));
+                node.path("sigungucode").asText(""),
+                node.path("cat1").asText(""),
+                node.path("cat2").asText(""),
+                node.path("cat3").asText(""));
     }
 }

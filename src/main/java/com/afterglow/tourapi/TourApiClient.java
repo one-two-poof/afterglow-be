@@ -47,6 +47,38 @@ public class TourApiClient {
         return parse(raw);
     }
 
+    /**
+     * 분류체계 코드 조회 (categoryCode2). cat1 없이 호출하면 대분류 전체, cat1만 주면 그 아래 중분류
+     * 전체, cat1+cat2를 주면 그 아래 소분류 전체를 반환한다.
+     */
+    public JsonNode fetchCategoryCode(String cat1, String cat2) {
+        requireConfigured();
+
+        String raw = tourApiWebClient.get()
+                .uri(builder -> {
+                    builder.path("/categoryCode2")
+                            .queryParam("serviceKey", properties.serviceKey())
+                            .queryParam("numOfRows", 50)
+                            .queryParam("pageNo", 1)
+                            .queryParam("MobileOS", "ETC")
+                            .queryParam("MobileApp", properties.mobileApp())
+                            .queryParam("_type", "json");
+                    if (cat1 != null && !cat1.isBlank()) {
+                        builder.queryParam("cat1", cat1);
+                    }
+                    if (cat2 != null && !cat2.isBlank()) {
+                        builder.queryParam("cat2", cat2);
+                    }
+                    return builder.build();
+                })
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, this::mapError)
+                .bodyToMono(String.class)
+                .block();
+
+        return parse(raw);
+    }
+
     private JsonNode parse(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new TourApiException("공공데이터 API 응답이 비어 있습니다.");

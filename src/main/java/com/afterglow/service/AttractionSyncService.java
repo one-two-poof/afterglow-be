@@ -17,14 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 관광공사 TourAPI 4.0(KorService2) 강남구/서초구 목록 5개 카테고리(관광지/문화시설/축제공연행사/쇼핑/음식점)를
- * {@link Attraction} 테이블에 채운다. {@link AccommodationSyncService}와 같은 패턴 —
- * 카카오 카테고리가 있는 유형(관광지/문화시설/음식점)은 카카오로 재검색해 매칭되면 기존 행(카카오 CSV
- * import 포함)을 그대로 갱신하고, 카카오 대응 카테고리가 없는 유형(축제공연행사/쇼핑)이나 매칭 실패 건은
- * tourism_content_id로 재동기화 매칭한다.
+ * 관광공사 TourAPI 4.0(KorService2) 강남구/서초구 목록(관광지/문화시설/쇼핑)을 {@link Attraction}
+ * 테이블에 채운다. {@link AccommodationSyncService}와 같은 패턴 — 카카오 카테고리가 있는 유형
+ * (관광지/문화시설)은 카카오로 재검색해 매칭되면 기존 행(카카오 CSV import 포함)을 그대로 갱신하고,
+ * 카카오 대응 카테고리가 없는 유형(쇼핑)이나 매칭 실패 건은 tourism_content_id로 재동기화 매칭한다.
  *
  * <p>attractions 테이블에는 카테고리 구분 전용 컬럼이 없어서, contentTypeId를 category_group_code에
- * 항상 강제로 저장한다(매칭 성공 시에도 카카오의 세부 코드 대신 이 값을 쓴다).
+ * 항상 강제로 저장한다(매칭 성공 시에도 카카오의 세부 코드 대신 이 값을 쓴다). category_name은 매칭
+ * 성공 시 카카오의 ">" 계층 텍스트를 그대로 쓰고, 매칭 실패 시 {@link TourApiCategoryService}로
+ * cat1/cat2/cat3 코드를 이름으로 풀어 같은 형식(">" 구분)으로 맞춘다.
  */
 @Service
 public class AttractionSyncService {
@@ -45,14 +46,17 @@ public class AttractionSyncService {
             new CategoryConfig(38, "쇼핑", null));
 
     private final TourApiService tourApiService;
+    private final TourApiCategoryService tourApiCategoryService;
     private final KakaoPlaceClient kakaoPlaceClient;
     private final AttractionRepository attractionRepository;
 
     public AttractionSyncService(
             TourApiService tourApiService,
+            TourApiCategoryService tourApiCategoryService,
             KakaoPlaceClient kakaoPlaceClient,
             AttractionRepository attractionRepository) {
         this.tourApiService = tourApiService;
+        this.tourApiCategoryService = tourApiCategoryService;
         this.kakaoPlaceClient = kakaoPlaceClient;
         this.attractionRepository = attractionRepository;
     }
@@ -160,13 +164,15 @@ public class AttractionSyncService {
 
         String contentTypeId = String.valueOf(category.contentTypeId());
         String address = firstNonBlank(item.addr1(), item.addr2());
+        String hierarchicalCategoryName = firstNonBlank(
+                tourApiCategoryService.resolveHierarchy(item.cat1(), item.cat2(), item.cat3()), category.label());
         Attraction attraction = attractionRepository.findByTourismContentId(item.contentId()).orElse(null);
         if (attraction == null) {
             attraction = new Attraction(
                     null,
                     item.contentId(),
                     item.title(),
-                    category.label(),
+                    hierarchicalCategoryName,
                     address,
                     null,
                     mapX,
@@ -182,7 +188,7 @@ public class AttractionSyncService {
         } else {
             attraction.updateFromSync(
                     item.title(),
-                    category.label(),
+                    hierarchicalCategoryName,
                     address,
                     attraction.getRoadAddressName(),
                     mapX,
