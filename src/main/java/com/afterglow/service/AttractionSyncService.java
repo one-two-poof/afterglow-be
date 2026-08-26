@@ -109,7 +109,7 @@ public class AttractionSyncService {
         String contentTypeId = String.valueOf(category.contentTypeId());
         String image = firstNonBlank(item.firstImage(), null);
         if (attraction == null) {
-            Attraction created = new Attraction(
+            attraction = new Attraction(
                     kakaoPlace.id(),
                     item.contentId(),
                     kakaoPlace.placeName(),
@@ -125,8 +125,7 @@ public class AttractionSyncService {
                     kakaoPlace.placeUrl(),
                     SOURCE_BOTH,
                     syncedAt);
-            created.applyMlTags(null, category.label(), null, null, null, null, null, null);
-            attractionRepository.save(created);
+            attraction.applyMlTags(null, category.label(), null, null, null, null, null, null);
         } else {
             attraction.updateFromSync(
                     kakaoPlace.placeName(),
@@ -144,6 +143,8 @@ public class AttractionSyncService {
                     SOURCE_BOTH,
                     syncedAt);
         }
+        applyWalkConstraintsIfMissing(attraction, category);
+        attractionRepository.save(attraction);
     }
 
     /** 카카오 매칭 실패/불가 — 관광공사 원본만으로 저장. 좌표가 없으면 스킵하고 false를 반환한다. */
@@ -159,7 +160,7 @@ public class AttractionSyncService {
         String address = firstNonBlank(item.addr1(), item.addr2());
         Attraction attraction = attractionRepository.findByTourismContentId(item.contentId()).orElse(null);
         if (attraction == null) {
-            Attraction created = new Attraction(
+            attraction = new Attraction(
                     null,
                     item.contentId(),
                     item.title(),
@@ -175,8 +176,7 @@ public class AttractionSyncService {
                     null,
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
-            created.applyMlTags(null, category.label(), null, null, null, null, null, null);
-            attractionRepository.save(created);
+            attraction.applyMlTags(null, category.label(), null, null, null, null, null, null);
         } else {
             attraction.updateFromSync(
                     item.title(),
@@ -194,7 +194,93 @@ public class AttractionSyncService {
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
         }
+        applyWalkConstraintsIfMissing(attraction, category);
+        attractionRepository.save(attraction);
         return true;
+    }
+
+    /**
+     * is_indoor 등 도보 제약 태그는 CSV로 실측 라벨링된 행(non-null)은 절대 건드리지 않고,
+     * 아직 한 번도 분류되지 않은 행(null)에만 contentTypeId+텍스트 키워드 기반 규칙으로 채운다.
+     */
+    private void applyWalkConstraintsIfMissing(Attraction attraction, CategoryConfig category) {
+        if (attraction.getIsIndoor() != null) {
+            return;
+        }
+        WalkTags tags = classifyWalkTags(category.contentTypeId(), attraction.getPlaceName(), attraction.getCategoryName());
+        attraction.applyWalkConstraints(tags.isIndoor(), tags.isHeatSource(), tags.isMassageSpot(), tags.walkHard());
+    }
+
+    /**
+     * TourAPI/카카오 응답엔 실내 여부·찜질방 여부 같은 값이 없어서, contentTypeId별 기본값과
+     * 장소명/카테고리명 키워드로 보수적으로 추정한다. 정확한 실측이 필요하면 CSV ML 라벨링으로
+     * 덮어써야 한다(이 규칙은 is_indoor가 null인 행에만 적용되므로 CSV 값은 안전하다).
+     */
+    private static WalkTags classifyWalkTags(int contentTypeId, String placeName, String categoryName) {
+        String text = (nullToEmpty(placeName) + " " + nullToEmpty(categoryName));
+        boolean heatSource = containsAny(text, "찜질방", "스파", "사우나", "온천", "한증막");
+        boolean massageSpot = containsAny(text, "마사지", "안마", "맛사지");
+
+        boolean indoor;
+        int walkHard;
+        switch (contentTypeId) {
+            case 12 -> { // 관광지
+                if (containsAny(text, "공원", "숲", "산", "하천", "둘레길", "생태", "광장", "정원")) {
+                    indoor = false;
+                    walkHard = 5;
+                } else if (containsAny(text, "타워", "전망대", "박물관", "미술관", "전시관", "아쿠아리움")) {
+                    indoor = true;
+                    walkHard = 2;
+                } else {
+                    indoor = false;
+                    walkHard = 4;
+                }
+            }
+            case 14 -> { // 문화시설
+                indoor = true;
+                walkHard = containsAny(text, "영화관", "시네마") ? 1 : 2;
+            }
+            case 15 -> { // 축제공연행사
+                if (containsAny(text, "공연장", "극장", "아트홀", "홀")) {
+                    indoor = true;
+                    walkHard = 1;
+                } else {
+                    indoor = false;
+                    walkHard = 3;
+                }
+            }
+            case 38 -> { // 쇼핑
+                if (containsAny(text, "시장", "거리")) {
+                    indoor = false;
+                    walkHard = 3;
+                } else {
+                    indoor = true;
+                    walkHard = 2;
+                }
+            }
+            case 39 -> { // 음식점
+                indoor = true;
+                walkHard = 1;
+            }
+            default -> {
+                indoor = false;
+                walkHard = 3;
+            }
+        }
+        return new WalkTags(indoor, heatSource, massageSpot, walkHard);
+    }
+
+    private static boolean containsAny(String text, String... keywords) {
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static BigDecimal parseOrNull(String value) {
@@ -228,6 +314,9 @@ public class AttractionSyncService {
     }
 
     private record CategoryConfig(int contentTypeId, String label, String kakaoCategoryGroupCode) {
+    }
+
+    private record WalkTags(boolean isIndoor, boolean isHeatSource, boolean isMassageSpot, int walkHard) {
     }
 
     public record CategoryResult(

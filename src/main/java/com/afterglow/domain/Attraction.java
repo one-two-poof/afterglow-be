@@ -159,6 +159,18 @@ public class Attraction {
         this.isNa = isNa;
     }
 
+    /**
+     * TourAPI/카카오 동기화 시 도보 제약 태그를 자동 분류해 채운다. CSV 백필로 이미 실측값이 들어간
+     * 행(is_indoor가 non-null)은 절대 덮어쓰지 않도록 호출하는 쪽(AttractionSyncService)에서
+     * is_indoor == null일 때만 호출한다.
+     */
+    public void applyWalkConstraints(Boolean isIndoor, Boolean isHeatSource, Boolean isMassageSpot, Integer walkHard) {
+        this.isIndoor = isIndoor;
+        this.isHeatSource = isHeatSource;
+        this.isMassageSpot = isMassageSpot;
+        this.walkHard = walkHard;
+    }
+
     /** CSV 통째로 import — 기존 행이 없을 때 새로 만드는 용도. */
     public static Attraction fromCsvRow(
             String placeId,
