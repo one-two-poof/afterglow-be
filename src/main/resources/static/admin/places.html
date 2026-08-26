@@ -82,6 +82,9 @@
   .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 16px; }
   .pagination button { padding: 6px 12px; }
   .pagination span { font-size: 13px; color: var(--muted); }
+
+  #group-by-source-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  tr.group-header td { background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 12.5px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -110,6 +113,7 @@
       <option value="ACCOMMODATION">숙소</option>
       <option value="ATTRACTION">장소</option>
     </select>
+    <button type="button" id="group-by-source-btn">출처별로 모아보기</button>
     <button class="primary" id="add-btn">+ 새 장소 추가</button>
   </div>
 </div>
@@ -247,6 +251,15 @@
   const PAGE_SIZE = 10;
   let currentItems = [];
   let currentPage = 1;
+  let groupBySource = false;
+
+  const groupBySourceBtn = document.getElementById('group-by-source-btn');
+  groupBySourceBtn.addEventListener('click', () => {
+    groupBySource = !groupBySource;
+    groupBySourceBtn.classList.toggle('active', groupBySource);
+    currentPage = 1;
+    renderPage();
+  });
 
   async function loadPlaces(name) {
     countEl.textContent = '불러오는 중...';
@@ -267,12 +280,17 @@
   }
 
   function renderPage() {
+    const paginationEl = document.getElementById('pagination');
+    if (groupBySource) {
+      renderGroupedRows(currentItems);
+      paginationEl.style.display = 'none';
+      return;
+    }
     const totalPages = Math.max(1, Math.ceil(currentItems.length / PAGE_SIZE));
     if (currentPage > totalPages) currentPage = totalPages;
     const start = (currentPage - 1) * PAGE_SIZE;
     renderRows(currentItems.slice(start, start + PAGE_SIZE));
 
-    const paginationEl = document.getElementById('pagination');
     paginationEl.style.display = currentItems.length > PAGE_SIZE ? 'flex' : 'none';
     document.getElementById('page-indicator').textContent = `${currentPage} / ${totalPages}`;
     document.getElementById('prev-page-btn').disabled = currentPage <= 1;
@@ -374,6 +392,36 @@
           .map((c) => `<td${c.cellClass ? ` class="${c.cellClass}"` : ''}>${c.render(item)}</td>`)
           .join('');
       rowsEl.appendChild(tr);
+    }
+  }
+
+  function renderGroupedRows(items) {
+    const columns = currentColumns();
+    theadEl.innerHTML = '<tr>' + columns.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('') + '</tr>';
+    rowsEl.innerHTML = '';
+    emptyEl.style.display = items.length === 0 ? 'block' : 'none';
+
+    const groups = new Map();
+    for (const item of items) {
+      const key = item.source || '출처 미상';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    const sortedKeys = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+
+    for (const key of sortedKeys) {
+      const groupItems = groups.get(key);
+      const headerTr = document.createElement('tr');
+      headerTr.className = 'group-header';
+      headerTr.innerHTML = `<td colspan="${columns.length}">${escapeHtml(key)} (${groupItems.length}개)</td>`;
+      rowsEl.appendChild(headerTr);
+      for (const item of groupItems) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = columns
+            .map((c) => `<td${c.cellClass ? ` class="${c.cellClass}"` : ''}>${c.render(item)}</td>`)
+            .join('');
+        rowsEl.appendChild(tr);
+      }
     }
   }
 
