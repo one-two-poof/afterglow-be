@@ -16,6 +16,8 @@ public class KakaoPlaceClient {
 
     /** 카카오 로컬 카테고리 코드 — 병원 (성형외과/피부과/한의원 등 의료기관 포함) */
     private static final String HOSPITAL_CATEGORY_GROUP_CODE = "HP8";
+    /** 카카오 로컬 카테고리 코드 — 숙박 */
+    private static final String ACCOMMODATION_CATEGORY_GROUP_CODE = "AD5";
     private static final int SEARCH_RADIUS_M = 2000;
     private static final int PAGE_SIZE = 15;
     private static final int MAX_PAGE = 45; // 카카오 API 자체 상한
@@ -33,6 +35,18 @@ public class KakaoPlaceClient {
      * 반경 내에서 거리순으로 가장 가까운 1건을 반환한다.
      */
     public Optional<KakaoPlace> findHospital(String query, String mapX, String mapY) {
+        return findByCategory(query, HOSPITAL_CATEGORY_GROUP_CODE, mapX, mapY);
+    }
+
+    /**
+     * 숙박 카테고리(AD5)로 제한해서 키워드 검색. mapX/mapY가 있으면 그 좌표 기준
+     * 반경 내에서 거리순으로 가장 가까운 1건을 반환한다.
+     */
+    public Optional<KakaoPlace> findAccommodation(String query, String mapX, String mapY) {
+        return findByCategory(query, ACCOMMODATION_CATEGORY_GROUP_CODE, mapX, mapY);
+    }
+
+    private Optional<KakaoPlace> findByCategory(String query, String categoryGroupCode, String mapX, String mapY) {
         requireConfigured();
         if (!StringUtils.hasText(query)) {
             return Optional.empty();
@@ -44,7 +58,7 @@ public class KakaoPlaceClient {
                 .uri(builder -> {
                     builder.path("/v2/local/search/keyword.json")
                             .queryParam("query", query)
-                            .queryParam("category_group_code", HOSPITAL_CATEGORY_GROUP_CODE)
+                            .queryParam("category_group_code", categoryGroupCode)
                             .queryParam("size", 1);
                     if (hasCoordinates) {
                         builder.queryParam("x", mapX)

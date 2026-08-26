@@ -1,6 +1,7 @@
 package com.afterglow.web;
 
 import com.afterglow.domain.PlaceType;
+import com.afterglow.service.AccommodationSyncService;
 import com.afterglow.service.HospitalSyncService;
 import com.afterglow.service.HospitalSyncService.SyncResult;
 import com.afterglow.service.PlaceCsvImportService;
@@ -36,14 +37,17 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final HospitalSyncService hospitalSyncService;
+    private final AccommodationSyncService accommodationSyncService;
     private final PlaceCsvImportService placeCsvImportService;
 
     public PlaceController(
             PlaceService placeService,
             HospitalSyncService hospitalSyncService,
+            AccommodationSyncService accommodationSyncService,
             PlaceCsvImportService placeCsvImportService) {
         this.placeService = placeService;
         this.hospitalSyncService = hospitalSyncService;
+        this.accommodationSyncService = accommodationSyncService;
         this.placeCsvImportService = placeCsvImportService;
     }
 
@@ -142,6 +146,16 @@ public class PlaceController {
     @PostMapping("/sync-hospitals")
     public SyncResult syncHospitals() {
         return hospitalSyncService.sync();
+    }
+
+    @Operation(
+            summary = "숙소 동기화 수동 트리거",
+            description = "한국관광공사 TourAPI(KorService2, 숙박)와 카카오 로컬 API(AD5 숙박 카테고리)를 조합해 "
+                    + "강남구/서초구 범위로 hospitals_accommodations 테이블의 ACCOMMODATION 행을 갱신한다. "
+                    + "매일 새벽 4시 30분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+    @PostMapping("/sync-accommodations")
+    public AccommodationSyncService.SyncResult syncAccommodations() {
+        return accommodationSyncService.sync();
     }
 
     /**

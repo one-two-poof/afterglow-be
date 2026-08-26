@@ -1,5 +1,6 @@
 package com.afterglow;
 
+import com.afterglow.config.AccommodationSyncProperties;
 import com.afterglow.config.AdminProperties;
 import com.afterglow.config.AppCorsProperties;
 import com.afterglow.config.HospitalSyncProperties;
@@ -9,6 +10,7 @@ import com.afterglow.config.MedicalTourismProperties;
 import com.afterglow.config.NotionProperties;
 import com.afterglow.config.OAuthProperties;
 import com.afterglow.config.SyncProperties;
+import com.afterglow.config.TourApiProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -25,7 +27,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         OAuthProperties.class,
         KakaoProperties.class,
         HospitalSyncProperties.class,
-        AdminProperties.class
+        AdminProperties.class,
+        TourApiProperties.class,
+        AccommodationSyncProperties.class
 })
 public class AfterglowBeApplication {
 
