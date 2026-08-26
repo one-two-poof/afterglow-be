@@ -70,7 +70,7 @@ public record PlaceResponse(
         return new PlaceResponse(
                 place.getId(),
                 place.getPlaceId(),
-                null,
+                place.getTourismContentId(),
                 place.getPlaceName(),
                 place.getCategoryName(),
                 place.getCategoryGroupName(),

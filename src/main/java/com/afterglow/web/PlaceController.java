@@ -2,6 +2,7 @@ package com.afterglow.web;
 
 import com.afterglow.domain.PlaceType;
 import com.afterglow.service.AccommodationSyncService;
+import com.afterglow.service.AttractionSyncService;
 import com.afterglow.service.HospitalSyncService;
 import com.afterglow.service.HospitalSyncService.SyncResult;
 import com.afterglow.service.PlaceCsvImportService;
@@ -38,16 +39,19 @@ public class PlaceController {
     private final PlaceService placeService;
     private final HospitalSyncService hospitalSyncService;
     private final AccommodationSyncService accommodationSyncService;
+    private final AttractionSyncService attractionSyncService;
     private final PlaceCsvImportService placeCsvImportService;
 
     public PlaceController(
             PlaceService placeService,
             HospitalSyncService hospitalSyncService,
             AccommodationSyncService accommodationSyncService,
+            AttractionSyncService attractionSyncService,
             PlaceCsvImportService placeCsvImportService) {
         this.placeService = placeService;
         this.hospitalSyncService = hospitalSyncService;
         this.accommodationSyncService = accommodationSyncService;
+        this.attractionSyncService = attractionSyncService;
         this.placeCsvImportService = placeCsvImportService;
     }
 
@@ -156,6 +160,15 @@ public class PlaceController {
     @PostMapping("/sync-accommodations")
     public AccommodationSyncService.SyncResult syncAccommodations() {
         return accommodationSyncService.sync();
+    }
+
+    @Operation(
+            summary = "관광명소 동기화 수동 트리거",
+            description = "한국관광공사 TourAPI(KorService2, 관광지/문화시설/축제공연행사/쇼핑/음식점)와 카카오 로컬 API를 조합해 "
+                    + "강남구/서초구 범위로 attractions 테이블을 갱신한다. 매일 새벽 4시 45분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+    @PostMapping("/sync-attractions")
+    public AttractionSyncService.SyncResult syncAttractions() {
+        return attractionSyncService.sync();
     }
 
     /**

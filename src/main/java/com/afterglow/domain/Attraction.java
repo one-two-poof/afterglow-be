@@ -26,6 +26,10 @@ public class Attraction {
     @Column(name = "place_id", unique = true, length = 64)
     private String placeId;
 
+    /** 관광공사 contentId. 카카오 매칭이 안 됐을 때 재동기화 시 같은 행을 찾기 위한 키. */
+    @Column(name = "tourism_content_id", unique = true, length = 32)
+    private String tourismContentId;
+
     @Column(name = "place_name", nullable = false, length = 256)
     private String placeName;
 
@@ -103,6 +107,7 @@ public class Attraction {
 
     public Attraction(
             String placeId,
+            String tourismContentId,
             String placeName,
             String categoryName,
             String addressName,
@@ -117,6 +122,7 @@ public class Attraction {
             String source,
             Instant syncedAt) {
         this.placeId = placeId;
+        this.tourismContentId = tourismContentId;
         this.placeName = placeName;
         this.categoryName = categoryName;
         this.addressName = addressName;
@@ -168,9 +174,47 @@ public class Attraction {
             BigDecimal mapY,
             Instant syncedAt) {
         return new Attraction(
-                placeId, placeName, categoryName, addressName, roadAddressName,
+                placeId, null, placeName, categoryName, addressName, roadAddressName,
                 mapX, mapY, null, categoryGroupCode, categoryGroupName, phone, placeUrl,
                 "CSV_IMPORT", syncedAt);
+    }
+
+    /**
+     * 관광공사 TourAPI + 카카오 동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않고,
+     * override되지 않았더라도 이번 응답에 이미지가 없으면 기존 값을 지우지 않고 그대로 둔다 —
+     * 값이 있을 때만 교체한다.
+     */
+    public void updateFromSync(
+            String placeName,
+            String categoryName,
+            String addressName,
+            String roadAddressName,
+            BigDecimal mapX,
+            BigDecimal mapY,
+            String imageUrl,
+            String categoryGroupCode,
+            String categoryGroupName,
+            String phone,
+            String placeUrl,
+            String primaryTypeName,
+            String source,
+            Instant syncedAt) {
+        this.placeName = placeName;
+        this.categoryName = categoryName;
+        this.addressName = addressName;
+        this.roadAddressName = roadAddressName;
+        this.mapX = mapX;
+        this.mapY = mapY;
+        if (!this.imageUrlOverridden && imageUrl != null && !imageUrl.isBlank()) {
+            this.imageUrl = imageUrl;
+        }
+        this.categoryGroupCode = categoryGroupCode;
+        this.categoryGroupName = categoryGroupName;
+        this.phone = phone;
+        this.placeUrl = placeUrl;
+        this.primaryTypeName = primaryTypeName;
+        this.source = source;
+        this.syncedAt = syncedAt;
     }
 
     /** 관리 페이지에서 사람이 직접 수정. 항상 전체 덮어쓰고, image는 이후 자동 동기화가 건드리지 않는다. */
@@ -201,6 +245,7 @@ public class Attraction {
 
     public Long getId() { return id; }
     public String getPlaceId() { return placeId; }
+    public String getTourismContentId() { return tourismContentId; }
     public String getPlaceName() { return placeName; }
     public String getCategoryName() { return categoryName; }
     public String getAddressName() { return addressName; }

@@ -77,6 +77,7 @@ public class PlaceService {
         if (placeType == PlaceType.ATTRACTION) {
             Attraction attraction = new Attraction(
                     request.placeId(),
+                    null,
                     request.placeName(),
                     request.categoryName(),
                     request.addressName(),

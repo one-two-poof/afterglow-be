@@ -3,6 +3,7 @@ package com.afterglow;
 import com.afterglow.config.AccommodationSyncProperties;
 import com.afterglow.config.AdminProperties;
 import com.afterglow.config.AppCorsProperties;
+import com.afterglow.config.AttractionSyncProperties;
 import com.afterglow.config.HospitalSyncProperties;
 import com.afterglow.config.JwtProperties;
 import com.afterglow.config.KakaoProperties;
@@ -29,7 +30,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         HospitalSyncProperties.class,
         AdminProperties.class,
         TourApiProperties.class,
-        AccommodationSyncProperties.class
+        AccommodationSyncProperties.class,
+        AttractionSyncProperties.class
 })
 public class AfterglowBeApplication {
 

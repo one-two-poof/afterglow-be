@@ -46,7 +46,12 @@ public class KakaoPlaceClient {
         return findByCategory(query, ACCOMMODATION_CATEGORY_GROUP_CODE, mapX, mapY);
     }
 
-    private Optional<KakaoPlace> findByCategory(String query, String categoryGroupCode, String mapX, String mapY) {
+    /**
+     * 임의의 카카오 카테고리 그룹 코드로 제한해서 키워드 검색. mapX/mapY가 있으면 그 좌표 기준
+     * 반경 내에서 거리순으로 가장 가까운 1건을 반환한다. 관광지(AT4)/문화시설(CT1)/음식점(FD6)처럼
+     * 전용 헬퍼가 없는 카테고리를 매칭할 때 직접 쓴다.
+     */
+    public Optional<KakaoPlace> findByCategory(String query, String categoryGroupCode, String mapX, String mapY) {
         requireConfigured();
         if (!StringUtils.hasText(query)) {
             return Optional.empty();

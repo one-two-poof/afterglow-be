@@ -9,6 +9,8 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
 
     Optional<Attraction> findByPlaceId(String placeId);
 
+    Optional<Attraction> findByTourismContentId(String tourismContentId);
+
     List<Attraction> findAllByOrderByPlaceNameAsc();
 
     List<Attraction> findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(String placeName);
