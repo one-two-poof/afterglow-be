@@ -36,14 +36,13 @@ public class AttractionSyncService {
 
     /**
      * 카카오 카테고리 그룹 코드 대응이 없는 유형(null)은 매칭을 시도하지 않고 TOURISM_API 단독으로 저장한다.
-     * 축제공연행사(15)는 TourAPI 응답이 지난 시즌 행사 위주로 과거 데이터가 많이 섞여 있어서 동기화 대상에서
-     * 제외한다 (2026-08-26, 기존 12건은 관리 페이지에서 수동 삭제함).
+     * 축제공연행사(15)와 음식점(39)은 TourAPI 응답이 최신화가 안 돼 있어(폐업/변경 반영 지연) 동기화
+     * 대상에서 제외한다 (2026-08-26, 기존 행은 관리 페이지에서 수동 삭제함).
      */
     private static final List<CategoryConfig> CATEGORIES = List.of(
             new CategoryConfig(12, "관광지", "AT4"),
             new CategoryConfig(14, "문화시설", "CT1"),
-            new CategoryConfig(38, "쇼핑", null),
-            new CategoryConfig(39, "음식점", "FD6"));
+            new CategoryConfig(38, "쇼핑", null));
 
     private final TourApiService tourApiService;
     private final KakaoPlaceClient kakaoPlaceClient;
