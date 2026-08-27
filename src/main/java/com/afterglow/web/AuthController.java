@@ -1,9 +1,7 @@
 package com.afterglow.web;
 
-import com.afterglow.config.JwtProperties;
 import com.afterglow.domain.User;
 import com.afterglow.repository.UserRepository;
-import com.afterglow.web.dto.AuthResponse;
 import com.afterglow.web.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,11 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final UserRepository userRepository;
-    private final JwtProperties jwtProperties;
 
-    public AuthController(UserRepository userRepository, JwtProperties jwtProperties) {
+    public AuthController(UserRepository userRepository) {
         this.userRepository = userRepository;
-        this.jwtProperties = jwtProperties;
     }
 
     @Operation(

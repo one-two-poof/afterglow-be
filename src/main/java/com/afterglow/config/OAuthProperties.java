@@ -7,7 +7,7 @@ public record OAuthProperties(String frontendRedirectUrl) {
 
     public OAuthProperties {
         if (frontendRedirectUrl == null || frontendRedirectUrl.isBlank()) {
-            frontendRedirectUrl = "http://localhost:3000/oauth/callback";
+            frontendRedirectUrl = "afterglow://oauth/callback";
         }
     }
 }
