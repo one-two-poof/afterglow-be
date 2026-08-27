@@ -26,13 +26,17 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * data/raw/ml_data의 CSV(카카오 원본 필드 + ML 태그)를 kakaoPlaceId 기준으로 반영한다.
  * placeType이 ATTRACTION이면 attractions, 그 외(HOSPITAL/ACCOMMODATION)면 hospitals_accommodations가 대상이다.
- * 두 가지 모드가 있다.
+ * (병원/숙소 전용) 두 가지 모드가 있다.
  * <ul>
  *   <li>createIfMissing=false (예: 병원 ML 태그 백필) — 이미 카카오/관광공사 동기화로
- *       들어와 있는 행에 primaryType 등 ML 전용 필드만 채운다. 매칭 안 되면 그냥 건너뜀.</li>
+ *       들어와 있는 행은 절대 건드리지 않고, 매칭 안 되는 행만 CSV 값 그대로 새로 만든다
+ *       (HOSPITAL로 생성, source=CSV_IMPORT).</li>
  *   <li>createIfMissing=true (예: 숙소처럼 살아있는 동기화 소스가 없는 카테고리) —
- *       매칭 안 되면 CSV 값 그대로 새 행을 만든다(source=CSV_IMPORT).</li>
+ *       매칭되는 행엔 primaryType 등 ML 전용 필드를 채우고, 매칭 안 되면 CSV 값 그대로
+ *       새 행을 만든다(source=CSV_IMPORT).</li>
  * </ul>
+ * attractions 대상(placeType=ATTRACTION)은 항상 매칭 시 ML 태그만 채우고, 매칭 안 되면
+ * createIfMissing 여부에 따라 새로 만들거나 건너뛴다.
  */
 @Service
 public class PlaceCsvImportService {
@@ -75,13 +79,11 @@ public class PlaceCsvImportService {
 
                 Optional<HospitalAccommodation> existing = hospitalAccommodationRepository.findByPlaceId(kakaoPlaceId);
                 if (existing.isPresent()) {
-                    applyHospitalAccommodationMlTags(existing.get(), row);
+                    if (createIfMissing) {
+                        applyHospitalAccommodationMlTags(existing.get(), row);
+                    }
+                    // createIfMissing=false(병원 ML 태그 백필 기본 호출)일 땐 이미 있는 행은 그대로 둔다.
                     matched++;
-                    continue;
-                }
-
-                if (!createIfMissing) {
-                    skipped++;
                     continue;
                 }
 
@@ -93,6 +95,9 @@ public class PlaceCsvImportService {
                     continue;
                 }
 
+                // createIfMissing=false 경로(병원 CSV 백필)는 새 행을 항상 HOSPITAL로 만든다.
+                // createIfMissing=true 경로는 호출자가 넘긴 placeType을 그대로 쓴다(예: ACCOMMODATION).
+                PlaceType newRowType = createIfMissing ? placeType : PlaceType.HOSPITAL;
                 HospitalAccommodation place = HospitalAccommodation.fromCsvRow(
                         kakaoPlaceId,
                         row.get("placeName"),
@@ -105,7 +110,7 @@ public class PlaceCsvImportService {
                         row.get("placeUrl"),
                         mapX,
                         mapY,
-                        placeType,
+                        newRowType,
                         Instant.now());
                 applyHospitalAccommodationMlTags(place, row);
                 hospitalAccommodationRepository.save(place);
