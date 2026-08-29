@@ -1,5 +1,6 @@
 package com.afterglow.service;
 
+import com.afterglow.kakao.SeoulDistricts;
 import com.afterglow.tourapi.TourApiClient;
 import com.afterglow.tourapi.TourApiClient.TourApiException;
 import com.afterglow.tourapi.TourApiLanguageClient;
@@ -19,8 +20,9 @@ public class TourApiService {
     private static final Logger log = LoggerFactory.getLogger(TourApiService.class);
 
     private static final String SEOUL_AREA_CODE = "1";
-    // areaCode2(areaCode=1) 조회로 확인한 서울 구 코드 — 강남구=1, 서초구=15
-    private static final List<String> GANGNAM_SEOCHO_SIGUNGU_CODES = List.of("1", "15");
+    private static final List<String> SEOUL_SIGUNGU_CODES = SeoulDistricts.ALL.stream()
+            .map(SeoulDistricts.Center::tourApiSigunguCode)
+            .toList();
     private static final int FETCH_ALL_ROWS = 500;
 
     private final TourApiClient client;
@@ -31,10 +33,10 @@ public class TourApiService {
         this.languageClient = languageClient;
     }
 
-    /** 강남구/서초구의 특정 contentTypeId(예: 32=숙박) 목록 전체 (페이징 없음) — 동기화 작업 전용 */
-    public List<TourApiListItem> listGangnamSeochoByContentType(int contentTypeId) {
+    /** 서울 25개 구의 특정 contentTypeId(예: 32=숙박) 목록 전체 (페이징 없음) — 동기화 작업 전용 */
+    public List<TourApiListItem> listSeoulByContentType(int contentTypeId) {
         List<TourApiListItem> items = new ArrayList<>();
-        for (String sigunguCode : GANGNAM_SEOCHO_SIGUNGU_CODES) {
+        for (String sigunguCode : SEOUL_SIGUNGU_CODES) {
             JsonNode root = client.fetchAreaBasedList(contentTypeId, SEOUL_AREA_CODE, sigunguCode, 1, FETCH_ALL_ROWS);
             verifyHeader(root);
             JsonNode body = root.path("response").path("body");
@@ -46,14 +48,14 @@ public class TourApiService {
     }
 
     /**
-     * place_translations 백필 전용 — 강남구/서초구의 특정 contentTypeId 목록을 지정 언어(locale: "ja"/"en")로
+     * place_translations 백필 전용 — 서울 25개 구의 특정 contentTypeId 목록을 지정 언어(locale: "ja"/"en")로
      * 조회해 contentId → title 맵으로 반환한다. 실패해도 동기화 본 작업(한글 목록 처리)을 막지 않도록
      * 예외를 던지지 않고 빈 맵을 반환한다.
      */
     public Map<String, String> titleByContentId(int contentTypeId, String locale) {
         Map<String, String> result = new HashMap<>();
         try {
-            for (String sigunguCode : GANGNAM_SEOCHO_SIGUNGU_CODES) {
+            for (String sigunguCode : SEOUL_SIGUNGU_CODES) {
                 JsonNode root = languageClient.fetchAreaBasedList(
                         locale, contentTypeId, SEOUL_AREA_CODE, sigunguCode, 1, FETCH_ALL_ROWS);
                 if (root == null) {

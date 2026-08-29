@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * TourAPI/의료관광 API로 공식 번역을 못 받은 행(CSV·카카오 단독 소스, 또는 TourAPI 목록에 그
+ * TourAPI/의료관광 API로 공식 번역을 못 받은 행(카카오 단독 소스, 또는 TourAPI 목록에 그
  * contentId가 이번엔 없었던 행)의 place_name/category_name 빈 자리를 {@link TranslationProvider}로
  * 채운다. attractions/hospitals_accommodations 전체를 훑는 배치 작업이라 스케줄러에서만 호출한다
  * (요청 경로에서 호출하지 않음).

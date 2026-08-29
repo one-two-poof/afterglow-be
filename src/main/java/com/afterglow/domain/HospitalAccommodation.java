@@ -13,7 +13,7 @@ import java.time.Instant;
 
 /**
  * 병원/숙소 전용 테이블. place 테이블을 종류별로 쪼개면서 관광명소({@link Attraction})와 분리했다.
- * 피부시술 ML 태그(skin_treatment_*)는 병원 CSV에서만 채워지고 숙소는 항상 null.
+ * 피부시술 ML 태그(skin_treatment_*)는 병원 데이터에서만 채워지고 숙소는 항상 null.
  */
 @Entity
 @Table(name = "hospitals_accommodations")
@@ -74,7 +74,7 @@ public class HospitalAccommodation {
 
     /**
      * TOURISM_API+KAKAO(병원, 관광공사+카카오 둘 다 매칭) / TOURISM_API(병원, 관광공사만) /
-     * KAKAO(병원, 카카오만) / CSV_IMPORT(숙소 CSV 통째로 import) / MANUAL(관리 페이지 직접 입력)
+     * KAKAO(병원, 카카오만) / MANUAL(관리 페이지 직접 입력)
      */
     @Column(nullable = false, length = 32)
     private String source;
@@ -145,7 +145,7 @@ public class HospitalAccommodation {
         this.syncedAt = syncedAt;
     }
 
-    /** ML 태그 CSV 백필 전용. 카카오/관광공사 동기화는 이 필드들을 절대 건드리지 않는다. */
+    /** 카카오/관광공사 동기화는 이 필드들을 절대 건드리지 않는다. */
     public void applyMlTags(
             String primaryTypeName,
             String skinTreatmentConfidence,
@@ -153,24 +153,6 @@ public class HospitalAccommodation {
         this.primaryTypeName = primaryTypeName;
         this.skinTreatmentConfidence = skinTreatmentConfidence;
         this.skinTreatmentSignals = skinTreatmentSignals;
-    }
-
-    /** CSV 통째로 import (예: 숙소) — 기존 행이 없을 때 새로 만드는 용도. */
-    public static HospitalAccommodation fromCsvRow(
-            String placeId,
-            String placeName,
-            String categoryName,
-            String phone,
-            String addressName,
-            String placeUrl,
-            BigDecimal mapX,
-            BigDecimal mapY,
-            PlaceType placeType,
-            Instant syncedAt) {
-        return new HospitalAccommodation(
-                placeId, null, placeName, categoryName, addressName,
-                mapX, mapY, null, phone, placeUrl,
-                placeType, "CSV_IMPORT", syncedAt);
     }
 
     /** 관리 페이지에서 사람이 직접 수정. 항상 전체 덮어쓰고, image는 이후 자동 동기화가 건드리지 않는다. */

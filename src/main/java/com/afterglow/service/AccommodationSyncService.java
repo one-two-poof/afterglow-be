@@ -18,10 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 관광공사 TourAPI 4.0(KorService2, contentTypeId=32 숙박) 강남구/서초구 목록을 카카오 로컬 API(AD5
+ * 관광공사 TourAPI 4.0(KorService2, contentTypeId=32 숙박) 서울 전체 목록을 카카오 로컬 API(AD5
  * 숙박 카테고리)와 매칭해 {@link HospitalAccommodation} 테이블의 ACCOMMODATION 행을 채운다.
  * {@link HospitalSyncService}의 관광공사+카카오 매칭 단계와 같은 패턴 — 매칭되면 기존 카카오 기반
- * (CSV_IMPORT 포함) 행을 그대로 찾아 갱신하므로 같은 숙소가 중복 생성되지 않는다.
+ * 행을 그대로 찾아 갱신하므로 같은 숙소가 중복 생성되지 않는다.
  */
 @Service
 public class AccommodationSyncService {
@@ -51,7 +51,7 @@ public class AccommodationSyncService {
     @Transactional
     public SyncResult sync() {
         Instant syncedAt = Instant.now();
-        List<TourApiListItem> items = tourApiService.listGangnamSeochoByContentType(ACCOMMODATION_CONTENT_TYPE_ID);
+        List<TourApiListItem> items = tourApiService.listSeoulByContentType(ACCOMMODATION_CONTENT_TYPE_ID);
         // 같은 목록을 언어별로 한 번 더 조회해 contentId→title 맵을 미리 만들어 둔다(건별 API 호출 방지).
         Map<String, String> jaTitles = tourApiService.titleByContentId(ACCOMMODATION_CONTENT_TYPE_ID, "ja");
         Map<String, String> enTitles = tourApiService.titleByContentId(ACCOMMODATION_CONTENT_TYPE_ID, "en");

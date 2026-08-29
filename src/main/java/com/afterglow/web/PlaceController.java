@@ -5,8 +5,6 @@ import com.afterglow.service.AccommodationSyncService;
 import com.afterglow.service.AttractionSyncService;
 import com.afterglow.service.HospitalSyncService;
 import com.afterglow.service.HospitalSyncService.SyncResult;
-import com.afterglow.service.PlaceCsvImportService;
-import com.afterglow.service.PlaceCsvImportService.ImportResult;
 import com.afterglow.service.PlaceService;
 import com.afterglow.service.PlaceTranslationBackfillService;
 import com.afterglow.service.PlaceTranslationBackfillService.BackfillResult;
@@ -15,7 +13,6 @@ import com.afterglow.web.dto.PlaceResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.nio.file.Path;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,9 +32,6 @@ import org.springframework.web.bind.annotation.RestController;
         + "조회는 공개, 쓰기는 JWT 필요")
 public class PlaceController {
 
-    private static final String DEFAULT_HOSPITAL_ML_TAG_CSV_PATH =
-            "data/raw/ml_data/gangnam_seocho_hospital_db.csv";
-
     private static final String LANG_DESCRIPTION =
             "응답 언어. 'ja' 또는 'en'만 지원하며, 생략하거나 다른 값을 주면 한국어 원본을 그대로 반환한다. "
                     + "place_translations에 아직 번역이 없는 필드는 한국어 원본으로 폴백한다. 주소는 로케일과 무관하게 항상 한국어 원본.";
@@ -46,7 +40,6 @@ public class PlaceController {
     private final HospitalSyncService hospitalSyncService;
     private final AccommodationSyncService accommodationSyncService;
     private final AttractionSyncService attractionSyncService;
-    private final PlaceCsvImportService placeCsvImportService;
     private final PlaceTranslationBackfillService placeTranslationBackfillService;
 
     public PlaceController(
@@ -54,13 +47,11 @@ public class PlaceController {
             HospitalSyncService hospitalSyncService,
             AccommodationSyncService accommodationSyncService,
             AttractionSyncService attractionSyncService,
-            PlaceCsvImportService placeCsvImportService,
             PlaceTranslationBackfillService placeTranslationBackfillService) {
         this.placeService = placeService;
         this.hospitalSyncService = hospitalSyncService;
         this.accommodationSyncService = accommodationSyncService;
         this.attractionSyncService = attractionSyncService;
-        this.placeCsvImportService = placeCsvImportService;
         this.placeTranslationBackfillService = placeTranslationBackfillService;
     }
 
@@ -164,8 +155,9 @@ public class PlaceController {
 
     @Operation(
             summary = "병원 동기화 수동 트리거",
-            description = "한국관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리, 강남/서초 스윕)를 조합해 "
-                    + "hospitals_accommodations 테이블의 HOSPITAL 행을 갱신한다. 매일 새벽 4시 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+            description = "한국관광공사 의료관광 목록과 카카오 로컬 API를 조합해 hospitals_accommodations 테이블의 "
+                    + "HOSPITAL 행을 서울 전체 범위로 갱신한다. 추가로 피부시술 키워드(리프팅/보톡스 등 10개)로 서울 25개 구를 "
+                    + "훑어 skinTreatmentConfidence/skinTreatmentSignals를 채운다. 매일 새벽 4시 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/sync-hospitals")
     public SyncResult syncHospitals() {
         return hospitalSyncService.sync();
@@ -174,7 +166,7 @@ public class PlaceController {
     @Operation(
             summary = "숙소 동기화 수동 트리거",
             description = "한국관광공사 TourAPI(KorService2, 숙박)와 카카오 로컬 API(AD5 숙박 카테고리)를 조합해 "
-                    + "강남구/서초구 범위로 hospitals_accommodations 테이블의 ACCOMMODATION 행을 갱신한다. "
+                    + "서울 전체 범위로 hospitals_accommodations 테이블의 ACCOMMODATION 행을 갱신한다. "
                     + "매일 새벽 4시 30분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/sync-accommodations")
     public AccommodationSyncService.SyncResult syncAccommodations() {
@@ -183,44 +175,19 @@ public class PlaceController {
 
     @Operation(
             summary = "관광명소 동기화 수동 트리거",
-            description = "한국관광공사 TourAPI(KorService2, 관광지/문화시설/축제공연행사/쇼핑/음식점)와 카카오 로컬 API를 조합해 "
-                    + "강남구/서초구 범위로 attractions 테이블을 갱신한다. 매일 새벽 4시 45분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+            description = "한국관광공사 TourAPI(KorService2, 관광지/문화시설/쇼핑)와 카카오 로컬 API를 조합해 "
+                    + "서울 전체 범위로 attractions 테이블을 갱신한다. 추가로 카카오 카테고리 그룹(CE7/CT1/AT4)·키워드로 "
+                    + "서울 25개 구를 훑어 카페/드럭스토어/백화점/쇼핑몰/미술관/공연장/찜질방/안마·스파 등을 분류해 채운다"
+                    + "(AttractionClassifier, 일부 유형은 popularity 최소 기준 미달 시 제외). "
+                    + "매일 새벽 4시 45분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/sync-attractions")
     public AttractionSyncService.SyncResult syncAttractions() {
         return attractionSyncService.sync();
     }
 
-    /**
-     * 로그인(JWT) 필요 — CSV를 kakaoPlaceId 기준으로 반영한다.
-     * placeType이 ATTRACTION이면 attractions, 그 외(HOSPITAL/ACCOMMODATION)면
-     * hospitals_accommodations 테이블을 대상으로 한다.
-     * path 생략 시 병원 ML 태그 CSV를 백필 전용(createIfMissing=false)으로 처리.
-     * 문화시설/백화점/드럭스토어/관광명소처럼 살아있는 동기화 소스가 없는 카테고리
-     * (예: data/raw/ml_data/gangnam_seocho_places_with_constraints.csv, 도보 제약
-     * isIndoor/isHeatSource/isMassageSpot/walkHard 포함)는 path와
-     * createIfMissing=true, placeType을 명시해서 새 행도 만들도록 호출한다.
-     * placeType은 createIfMissing=true일 때 새로 생성되는 행에만 쓰인다(기존 행 매칭 시엔 무시).
-     */
-    @Operation(
-            summary = "CSV로 장소 일괄 반영 (관리자)",
-            description = "data/raw/ml_data의 CSV를 kakaoPlaceId 기준으로 반영한다. placeType이 ATTRACTION이면 attractions, "
-                    + "그 외는 hospitals_accommodations가 대상이다. createIfMissing=false(기본)면 이미 동기화로 들어와 있는 행에 "
-                    + "ML 태그 필드만 채우는 백필 전용. createIfMissing=true면 매칭 안 되는 행을 새로 만들고, 이때 placeType이 새 행에 적용된다. JWT 필요.")
-    @PostMapping("/import-csv")
-    public ImportResult importCsv(
-            @Parameter(description = "CSV 파일 경로 (리포 루트 기준 상대경로). 생략 시 병원 ML 태그 CSV를 백필용으로 사용")
-            @RequestParam(required = false) String path,
-            @Parameter(description = "true면 매칭 안 되는 행을 새로 생성한다 (숙소·관광명소 CSV처럼 살아있는 동기화 소스가 없는 경우)")
-            @RequestParam(required = false, defaultValue = "false") boolean createIfMissing,
-            @Parameter(description = "createIfMissing=true일 때 새로 생성되는 행에 부여할 종류. ATTRACTION이면 attractions 테이블, 그 외는 hospitals_accommodations 테이블에 만들어진다.")
-            @RequestParam(required = false, defaultValue = "HOSPITAL") PlaceType placeType) {
-        Path csvPath = Path.of(path != null ? path : DEFAULT_HOSPITAL_ML_TAG_CSV_PATH);
-        return placeCsvImportService.importFrom(csvPath, createIfMissing, placeType);
-    }
-
     @Operation(
             summary = "번역 백필 수동 트리거 (관리자)",
-            description = "TourAPI/의료관광 API 공식 번역이 없는 행(CSV·카카오 단독 소스 등)의 place_name/category_name "
+            description = "TourAPI/의료관광 API 공식 번역이 없는 행(카카오 단독 소스 등)의 place_name/category_name "
                     + "빈 자리를 SeedTranslationProvider로 채운다. 매일 새벽 5시 30분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/backfill-translations")
     public BackfillResult backfillTranslations() {

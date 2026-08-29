@@ -30,7 +30,8 @@ public record PlaceResponse(
         Boolean isIndoor,
         Boolean isHeatSource,
         Boolean isMassageSpot,
-        Integer walkHard) {
+        Integer walkHard,
+        Integer popularity) {
 
     public static PlaceResponse from(HospitalAccommodation place) {
         return new PlaceResponse(
@@ -55,6 +56,7 @@ public record PlaceResponse(
                 null,
                 null,
                 null,
+                null,
                 null);
     }
 
@@ -76,7 +78,7 @@ public record PlaceResponse(
                 base.image(), base.phone(), base.placeUrl(), base.source(), base.imageOverridden(), base.syncedAt(),
                 base.placeType(), base.primaryTypeName(),
                 base.skinTreatmentConfidence(), base.skinTreatmentSignals(), base.isIndoor(), base.isHeatSource(),
-                base.isMassageSpot(), base.walkHard());
+                base.isMassageSpot(), base.walkHard(), base.popularity());
     }
 
     public static PlaceResponse from(Attraction place) {
@@ -102,6 +104,7 @@ public record PlaceResponse(
                 place.getIsIndoor(),
                 place.getIsHeatSource(),
                 place.getIsMassageSpot(),
-                place.getWalkHard());
+                place.getWalkHard(),
+                place.getPopularity());
     }
 }

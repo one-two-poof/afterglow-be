@@ -38,6 +38,11 @@ public class KakaoPlaceClient {
         return findByCategory(query, HOSPITAL_CATEGORY_GROUP_CODE, mapX, mapY);
     }
 
+    /** 병원 카테고리(HP8)로 제한한 키워드 검색 전체 결과 — {@link #searchKeywordAll} 참고. */
+    public List<KakaoPlace> searchHospitalKeywordAll(String query) {
+        return searchKeywordAll(query, HOSPITAL_CATEGORY_GROUP_CODE);
+    }
+
     /**
      * 숙박 카테고리(AD5)로 제한해서 키워드 검색. mapX/mapY가 있으면 그 좌표 기준
      * 반경 내에서 거리순으로 가장 가까운 1건을 반환한다.
@@ -86,26 +91,31 @@ public class KakaoPlaceClient {
     }
 
     /**
-     * 특정 좌표 중심 반경(m) 안의 병원 카테고리(HP8) 장소를 전부 훑는다.
-     * 관광공사 목록과 무관하게, 카카오에만 있는 병원을 찾기 위한 용도.
-     * 카카오 카테고리 검색은 페이지당 최대 15건, 최대 45페이지까지만 제공한다.
+     * 키워드 검색(좌표/반경 없이 텍스트 쿼리만)으로 카테고리 그룹 코드 내 결과를 전부 훑는다.
+     * "강남구 리프팅"처럼 지역명+시술명을 쿼리에 합쳐 넣는 방식으로 씀 — 좌표 기반 반경 검색이 아니라
+     * 카카오 자체 키워드 관련도 순으로 나온다. 페이지당 최대 15건, 최대 45페이지까지만 제공한다.
+     * categoryGroupCode가 null이면 그룹 제한 없이 검색한다("가정,생활" 트리처럼 전용 그룹코드가 없는 유형).
      */
-    public List<KakaoPlace> sweepHospitals(double lat, double lng, int radiusM) {
+    public List<KakaoPlace> searchKeywordAll(String query, String categoryGroupCode) {
         requireConfigured();
         List<KakaoPlace> results = new ArrayList<>();
+        if (!StringUtils.hasText(query)) {
+            return results;
+        }
 
         for (int page = 1; page <= MAX_PAGE; page++) {
             int currentPage = page;
             JsonNode root = kakaoWebClient.get()
-                    .uri(builder -> builder
-                            .path("/v2/local/search/category.json")
-                            .queryParam("category_group_code", HOSPITAL_CATEGORY_GROUP_CODE)
-                            .queryParam("x", lng)
-                            .queryParam("y", lat)
-                            .queryParam("radius", radiusM)
-                            .queryParam("page", currentPage)
-                            .queryParam("size", PAGE_SIZE)
-                            .build())
+                    .uri(builder -> {
+                        builder.path("/v2/local/search/keyword.json")
+                                .queryParam("query", query)
+                                .queryParam("page", currentPage)
+                                .queryParam("size", PAGE_SIZE);
+                        if (StringUtils.hasText(categoryGroupCode)) {
+                            builder.queryParam("category_group_code", categoryGroupCode);
+                        }
+                        return builder.build();
+                    })
                     .retrieve()
                     .onStatus(HttpStatusCode::isError, this::mapError)
                     .bodyToMono(JsonNode.class)

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 병원/숙소/관광명소 동기화(04:00/04:30/04:45)가 TourAPI·의료관광 API 공식 번역으로 채우지 못한
- * 자리(CSV·카카오 단독 소스 등)를 {@link PlaceTranslationBackfillService}로 채운다.
+ * 자리(카카오 단독 소스 등)를 {@link PlaceTranslationBackfillService}로 채운다.
  */
 @Component
 public class PlaceTranslationBackfillScheduler {

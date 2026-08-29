@@ -4,11 +4,14 @@ import com.afterglow.domain.Attraction;
 import com.afterglow.domain.PlaceType;
 import com.afterglow.kakao.KakaoPlace;
 import com.afterglow.kakao.KakaoPlaceClient;
+import com.afterglow.kakao.KakaoRatingClient;
+import com.afterglow.kakao.SeoulDistricts;
 import com.afterglow.repository.AttractionRepository;
 import com.afterglow.web.dto.TourApiListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,9 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
- * 관광공사 TourAPI 4.0(KorService2) 강남구/서초구 목록(관광지/문화시설/쇼핑)을 {@link Attraction}
+ * 관광공사 TourAPI 4.0(KorService2) 서울 전체 목록(관광지/문화시설/쇼핑)을 {@link Attraction}
  * 테이블에 채운다. {@link AccommodationSyncService}와 같은 패턴 — 카카오 카테고리가 있는 유형
- * (관광지/문화시설)은 카카오로 재검색해 매칭되면 기존 행(카카오 CSV import 포함)을 그대로 갱신하고,
+ * (관광지/문화시설)은 카카오로 재검색해 매칭되면 기존 행을 그대로 갱신하고,
  * 카카오 대응 카테고리가 없는 유형(쇼핑)이나 매칭 실패 건은 tourism_content_id로 재동기화 매칭한다.
  *
  * <p>category_name은 매칭 성공 시 카카오의 ">" 계층 텍스트를 그대로 쓰고, 매칭 실패 시
@@ -34,6 +37,7 @@ public class AttractionSyncService {
 
     private static final String SOURCE_BOTH = "TOURISM_API+KAKAO";
     private static final String SOURCE_TOURISM_ONLY = "TOURISM_API";
+    private static final String SOURCE_KAKAO_ONLY = "KAKAO";
 
     /**
      * 카카오 카테고리 그룹 코드 대응이 없는 유형(null)은 매칭을 시도하지 않고 TOURISM_API 단독으로 저장한다.
@@ -45,9 +49,20 @@ public class AttractionSyncService {
             new CategoryConfig(14, "문화시설", "CT1"),
             new CategoryConfig(38, "쇼핑", null));
 
+    /** {@link AttractionClassifier}가 처리할 후보를 찾기 위한 카카오 카테고리 그룹 스윕(그룹코드 있는 것만). */
+    private static final List<String> KAKAO_SWEEP_CATEGORY_GROUP_CODES = List.of("CE7", "CT1", "AT4");
+
+    /** 카카오 전용 그룹코드가 없는 유형(가정,생활 트리) — "{구} {키워드}"로 텍스트 검색. */
+    private static final List<String> SHOPPING_KEYWORDS = List.of("드럭스토어", "백화점", "쇼핑몰");
+
+    /** 웰니스(찜질방/사우나/체형관리/피부관리)도 전용 그룹코드가 없어 텍스트 검색으로 찾는다. */
+    private static final List<String> WELLNESS_KEYWORDS = List.of("찜질방", "사우나", "마사지", "스파");
+
     private final TourApiService tourApiService;
     private final TourApiCategoryService tourApiCategoryService;
     private final KakaoPlaceClient kakaoPlaceClient;
+    private final KakaoRatingClient kakaoRatingClient;
+    private final AttractionClassifier attractionClassifier;
     private final AttractionRepository attractionRepository;
     private final PlaceTranslationService placeTranslationService;
 
@@ -55,11 +70,15 @@ public class AttractionSyncService {
             TourApiService tourApiService,
             TourApiCategoryService tourApiCategoryService,
             KakaoPlaceClient kakaoPlaceClient,
+            KakaoRatingClient kakaoRatingClient,
+            AttractionClassifier attractionClassifier,
             AttractionRepository attractionRepository,
             PlaceTranslationService placeTranslationService) {
         this.tourApiService = tourApiService;
         this.tourApiCategoryService = tourApiCategoryService;
         this.kakaoPlaceClient = kakaoPlaceClient;
+        this.kakaoRatingClient = kakaoRatingClient;
+        this.attractionClassifier = attractionClassifier;
         this.attractionRepository = attractionRepository;
         this.placeTranslationService = placeTranslationService;
     }
@@ -73,12 +92,14 @@ public class AttractionSyncService {
             results.add(syncCategory(category, syncedAt));
         }
 
-        log.info("관광명소 동기화 완료: {}", results);
-        return new SyncResult(results, syncedAt);
+        KakaoSweepResult kakaoSweep = collectKakaoAttractions(syncedAt);
+
+        log.info("관광명소 동기화 완료: {} / 카카오 스윕: {}", results, kakaoSweep);
+        return new SyncResult(results, kakaoSweep, syncedAt);
     }
 
     private CategoryResult syncCategory(CategoryConfig category, Instant syncedAt) {
-        List<TourApiListItem> items = tourApiService.listGangnamSeochoByContentType(category.contentTypeId());
+        List<TourApiListItem> items = tourApiService.listSeoulByContentType(category.contentTypeId());
         // 같은 목록을 언어별로 한 번 더 조회해 contentId→title 맵을 미리 만들어 둔다(건별 API 호출 방지).
         Map<String, String> jaTitles = tourApiService.titleByContentId(category.contentTypeId(), "ja");
         Map<String, String> enTitles = tourApiService.titleByContentId(category.contentTypeId(), "en");
@@ -221,7 +242,110 @@ public class AttractionSyncService {
     }
 
     /**
-     * is_indoor 등 도보 제약 태그는 CSV로 실측 라벨링된 행(non-null)은 절대 건드리지 않고,
+     * 카카오 카테고리 그룹코드(CE7/CT1/AT4)·키워드(드럭스토어/백화점/쇼핑몰/찜질방/사우나/마사지/스파)로
+     * 서울 25개 구를 훑어 {@link AttractionClassifier}로 분류되는 후보를 찾는다. TourAPI에 없는
+     * 유형(카페·드럭스토어·백화점·쇼핑몰·찜질방·안마/스파 등)을 여기서 채운다.
+     *
+     * <p>이미 1단계(TourAPI 동기화)로 들어와 있는 행이면(같은 kakaoPlaceId) 새로 만들지 않고
+     * primaryTypeName이 비어있을 때만 분류 결과를 얹는다. popularity 최소 기준이 있는 유형
+     * (카페/미술관/공연장/찜질방/안마·스파)은 카카오맵 평점을 조회해 기준 미달이면 후보를 버린다 —
+     * 평점 조회는 새로 생성되는 행에만 1회 수행한다(재동기화 시 재계산하지 않음, 호출량 절감).
+     */
+    private KakaoSweepResult collectKakaoAttractions(Instant syncedAt) {
+        Map<String, KakaoPlace> discovered = new LinkedHashMap<>();
+
+        for (SeoulDistricts.Center district : SeoulDistricts.ALL) {
+            for (String categoryGroupCode : KAKAO_SWEEP_CATEGORY_GROUP_CODES) {
+                sweepInto(discovered, district.name(), categoryGroupCode);
+            }
+            for (String keyword : SHOPPING_KEYWORDS) {
+                sweepInto(discovered, district.name() + " " + keyword, null);
+            }
+            for (String keyword : WELLNESS_KEYWORDS) {
+                sweepInto(discovered, district.name() + " " + keyword, null);
+            }
+        }
+
+        int newlyCreated = 0;
+        int merged = 0;
+        int skippedUnmapped = 0;
+        int skippedLowPopularity = 0;
+
+        for (KakaoPlace place : discovered.values()) {
+            Optional<AttractionClassifier.Classification> classified =
+                    attractionClassifier.classify(place.categoryName(), place.placeName());
+            if (classified.isEmpty()) {
+                skippedUnmapped++;
+                continue;
+            }
+            AttractionClassifier.Classification c = classified.get();
+
+            Attraction existing = attractionRepository.findByPlaceId(place.id()).orElse(null);
+            if (existing != null) {
+                merged++;
+                if (existing.getPrimaryTypeName() == null) {
+                    existing.applyMlTags(
+                            c.primaryTypeName(),
+                            c.walkDefaults().isIndoor(),
+                            c.walkDefaults().isHeatSource(),
+                            c.walkDefaults().isMassageSpot(),
+                            c.walkDefaults().walkHard());
+                }
+                continue;
+            }
+
+            Integer popularity = null;
+            if (c.minPopularity() > 0) {
+                int score = kakaoRatingClient.calculatePopularity(place.id());
+                if (score < c.minPopularity()) {
+                    skippedLowPopularity++;
+                    continue;
+                }
+                popularity = score;
+            }
+
+            Attraction attraction = new Attraction(
+                    place.id(),
+                    null,
+                    place.placeName(),
+                    place.categoryName(),
+                    place.addressName(),
+                    place.mapX(),
+                    place.mapY(),
+                    null,
+                    place.phone(),
+                    place.placeUrl(),
+                    SOURCE_KAKAO_ONLY,
+                    syncedAt);
+            attraction.applyMlTags(
+                    c.primaryTypeName(),
+                    c.walkDefaults().isIndoor(),
+                    c.walkDefaults().isHeatSource(),
+                    c.walkDefaults().isMassageSpot(),
+                    c.walkDefaults().walkHard());
+            attraction.applyPopularity(popularity);
+            attractionRepository.save(attraction);
+            newlyCreated++;
+        }
+
+        return new KakaoSweepResult(discovered.size(), newlyCreated, merged, skippedUnmapped, skippedLowPopularity);
+    }
+
+    private void sweepInto(Map<String, KakaoPlace> discovered, String query, String categoryGroupCode) {
+        List<KakaoPlace> found;
+        try {
+            found = kakaoPlaceClient.searchKeywordAll(query, categoryGroupCode);
+        } catch (Exception e) {
+            log.warn("카카오 관광명소 스윕 실패: query={}, categoryGroupCode={}, error={}", query, categoryGroupCode, e.getMessage());
+            return;
+        }
+        for (KakaoPlace place : found) {
+            discovered.putIfAbsent(place.id(), place);
+        }
+    }
+
+    /**
+     * is_indoor 등 도보 제약 태그는 이미 값이 채워진 행(non-null)은 절대 건드리지 않고,
      * 아직 한 번도 분류되지 않은 행(null)에만 contentTypeId+텍스트 키워드 기반 규칙으로 채운다.
      */
     private void applyWalkConstraintsIfMissing(Attraction attraction, CategoryConfig category) {
@@ -234,8 +358,8 @@ public class AttractionSyncService {
 
     /**
      * TourAPI/카카오 응답엔 실내 여부·찜질방 여부 같은 값이 없어서, contentTypeId별 기본값과
-     * 장소명/카테고리명 키워드로 보수적으로 추정한다. 정확한 실측이 필요하면 CSV ML 라벨링으로
-     * 덮어써야 한다(이 규칙은 is_indoor가 null인 행에만 적용되므로 CSV 값은 안전하다).
+     * 장소명/카테고리명 키워드로 보수적으로 추정한다. 이 규칙은 is_indoor가 null인 행에만
+     * 적용되므로, 다른 경로로 이미 채워진 값을 덮어쓰지 않는다.
      */
     private static WalkTags classifyWalkTags(int contentTypeId, String placeName, String categoryName) {
         String text = (nullToEmpty(placeName) + " " + nullToEmpty(categoryName));
@@ -344,6 +468,10 @@ public class AttractionSyncService {
             int contentTypeId, String label, int fetched, int matchedBoth, int tourismOnly, int skippedNoCoords) {
     }
 
-    public record SyncResult(List<CategoryResult> categories, Instant syncedAt) {
+    public record KakaoSweepResult(
+            int discovered, int newlyCreated, int merged, int skippedUnmapped, int skippedLowPopularity) {
+    }
+
+    public record SyncResult(List<CategoryResult> categories, KakaoSweepResult kakaoSweep, Instant syncedAt) {
     }
 }

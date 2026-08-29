@@ -11,7 +11,6 @@ import java.time.Instant;
 
 /**
  * 관광명소 전용 테이블. place 테이블을 종류별로 쪼개면서 병원/숙소({@link HospitalAccommodation})와 분리했다.
- * 도보 제약 ML 태그(is_indoor 등)는 관광명소 CSV에서만 채워진다.
  * 관광공사 API로 들어온 적이 없는 카테고리라 tourism_content_id는 없다.
  */
 @Entity
@@ -72,11 +71,18 @@ public class Attraction {
     @Column(name = "is_massage_spot")
     private Boolean isMassageSpot;
 
-    /** 도보 난이도 등급(낮을수록 쉬움). CSV 원본은 1~5 정수. */
+    /** 도보 난이도 등급(낮을수록 쉬움). */
     @Column(name = "walk_hard")
     private Integer walkHard;
 
-    /** CSV_IMPORT(CSV 통째로 import) / MANUAL(관리 페이지 직접 입력) */
+    /**
+     * 0~5 인기도 점수 — 카카오 평점(70%)·블로그 리뷰량(30%)으로 계산 ({@code AttractionClassifier} 참고).
+     * 카카오 스윕으로 새로 발견된 행에만 최초 1회 계산해서 채운다(재동기화 시 재계산하지 않음).
+     */
+    @Column(name = "popularity")
+    private Integer popularity;
+
+    /** TOURISM_API+KAKAO / TOURISM_API / MANUAL(관리 페이지 직접 입력) */
     @Column(nullable = false, length = 32)
     private String source;
 
@@ -114,7 +120,6 @@ public class Attraction {
         this.syncedAt = syncedAt;
     }
 
-    /** ML 태그 CSV 백필 전용. */
     public void applyMlTags(
             String primaryTypeName,
             Boolean isIndoor,
@@ -129,7 +134,7 @@ public class Attraction {
     }
 
     /**
-     * TourAPI/카카오 동기화 시 도보 제약 태그를 자동 분류해 채운다. CSV 백필로 이미 실측값이 들어간
+     * TourAPI/카카오 동기화 시 도보 제약 태그를 자동 분류해 채운다. 이미 값이 들어간
      * 행(is_indoor가 non-null)은 절대 덮어쓰지 않도록 호출하는 쪽(AttractionSyncService)에서
      * is_indoor == null일 때만 호출한다.
      */
@@ -140,29 +145,18 @@ public class Attraction {
         this.walkHard = walkHard;
     }
 
-    /** CSV 통째로 import — 기존 행이 없을 때 새로 만드는 용도. */
-    public static Attraction fromCsvRow(
-            String placeId,
-            String placeName,
-            String categoryName,
-            String phone,
-            String addressName,
-            String placeUrl,
-            BigDecimal mapX,
-            BigDecimal mapY,
-            Instant syncedAt) {
-        return new Attraction(
-                placeId, null, placeName, categoryName, addressName,
-                mapX, mapY, null, phone, placeUrl,
-                "CSV_IMPORT", syncedAt);
+    /** 카카오 스윕으로 새로 만들어질 때 최초 1회만 호출 — 재동기화는 재계산하지 않는다. */
+    public void applyPopularity(Integer popularity) {
+        this.popularity = popularity;
     }
 
     /**
      * 관광공사 TourAPI + 카카오 동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않고,
      * override되지 않았더라도 이번 응답에 이미지가 없으면 기존 값을 지우지 않고 그대로 둔다 —
      * 값이 있을 때만 교체한다.
-     * categoryName은 최초 생성 시에만 값이 들어가고, 이후 재동기화에서는
-     * 절대 덮어쓰지 않는다(수동 분류/보정이 이 필드에 쌓일 수 있어서).
+     * categoryName/primaryTypeName은 최초 생성 시에만 값이 들어가고, 이후 재동기화에서는
+     * 절대 덮어쓰지 않는다(수동 분류/보정, 또는 {@link AttractionClassifier}가 정한 더 정밀한
+     * 분류가 이 필드에 쌓일 수 있어서 — TourAPI 카테고리 라벨로 매번 되돌리면 안 됨).
      */
     public void updateFromSync(
             String placeName,
@@ -184,7 +178,9 @@ public class Attraction {
         }
         this.phone = phone;
         this.placeUrl = placeUrl;
-        this.primaryTypeName = primaryTypeName;
+        if (this.primaryTypeName == null) {
+            this.primaryTypeName = primaryTypeName;
+        }
         this.source = source;
         this.syncedAt = syncedAt;
     }
@@ -228,6 +224,7 @@ public class Attraction {
     public Boolean getIsHeatSource() { return isHeatSource; }
     public Boolean getIsMassageSpot() { return isMassageSpot; }
     public Integer getWalkHard() { return walkHard; }
+    public Integer getPopularity() { return popularity; }
     public String getSource() { return source; }
     public Instant getSyncedAt() { return syncedAt; }
 }

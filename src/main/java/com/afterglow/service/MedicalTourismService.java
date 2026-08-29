@@ -16,11 +16,9 @@ import org.springframework.util.StringUtils;
 public class MedicalTourismService {
 
     // mdclTursmSyncList는 지역 필터 파라미터를 지원하지 않으므로,
-    // 전국 목록을 한 번에 받아온 뒤 법정동코드로 강남구/서초구만 걸러서 자체 페이징한다.
-    // baseAddr는 langDivCd와 무관하게 로마자 표기라 "강남구" 문자열 매칭은 불가능함.
+    // 전국 목록을 한 번에 받아온 뒤 법정동코드로 서울만 걸러서 자체 페이징한다.
+    // baseAddr는 langDivCd와 무관하게 로마자 표기라 "서울" 문자열 매칭은 불가능함.
     private static final String SEOUL_REGN_CD = "11";
-    private static final String GANGNAM_SIGNGU_CD = "680";
-    private static final String SEOCHO_SIGNGU_CD = "650";
     private static final int FETCH_ALL_ROWS = 1000;
 
     private final MedicalTourismClient client;
@@ -32,7 +30,7 @@ public class MedicalTourismService {
     }
 
     public MedicalTourismListResponse getHospitals(int pageNo, int numOfRows, String lang) {
-        List<MedicalTourismListItem> items = listAllGangnamSeocho(lang);
+        List<MedicalTourismListItem> items = listAllSeoul(lang);
 
         int fromIndex = Math.min((pageNo - 1) * numOfRows, items.size());
         int toIndex = Math.min(fromIndex + numOfRows, items.size());
@@ -44,8 +42,8 @@ public class MedicalTourismService {
                 items.subList(fromIndex, toIndex));
     }
 
-    /** 강남구/서초구 의료관광 기관 전체 (페이징 없음) — 동기화 작업 등 내부 용도 */
-    public List<MedicalTourismListItem> listAllGangnamSeocho(String lang) {
+    /** 서울 전체 의료관광 기관 전체 (페이징 없음) — 동기화 작업 등 내부 용도 */
+    public List<MedicalTourismListItem> listAllSeoul(String lang) {
         JsonNode root = client.fetchList(1, FETCH_ALL_ROWS, resolveLang(lang));
         verifyHeader(root);
 
@@ -54,9 +52,7 @@ public class MedicalTourismService {
         List<MedicalTourismListItem> items = new ArrayList<>();
         for (JsonNode itemNode : itemArray(body)) {
             MedicalTourismListItem item = MedicalTourismListItem.from(itemNode);
-            if (SEOUL_REGN_CD.equals(item.lDongRegnCd())
-                    && (GANGNAM_SIGNGU_CD.equals(item.lDongSignguCd())
-                            || SEOCHO_SIGNGU_CD.equals(item.lDongSignguCd()))) {
+            if (SEOUL_REGN_CD.equals(item.lDongRegnCd())) {
                 items.add(item);
             }
         }

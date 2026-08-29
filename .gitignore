@@ -23,3 +23,5 @@ Thumbs.db
 batch/cache/
 batch/debug/
 batch/src/__pycache__/
+
+.claude

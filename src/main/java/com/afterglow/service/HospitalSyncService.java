@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,18 +26,17 @@ import org.springframework.util.StringUtils;
 
 /**
  * 관광공사 의료관광 목록과 카카오 로컬 API(HP8 병원 카테고리)를 조합해 {@link HospitalAccommodation}
- * 테이블의 HOSPITAL 행만 채운다(ACCOMMODATION 행은 이 서비스가 절대 건드리지 않는다).
- * 범위는 강남구/서초구로 고정 (data/raw/ml_data의 CSV 백필과 같은 범위).
+ * 테이블의 HOSPITAL 행만 채운다(ACCOMMODATION 행은 이 서비스가 절대 건드리지 않는다). 범위는 서울 전체.
  *
  * <p>세 단계로 나뉜다.
  * <ol>
- *   <li>0단계: 강남구/서초구 밖 주소를 가진 기존 HOSPITAL 행을 정리한다(과거 서울 전체 동기화로
- *       들어온 데이터를 이 범위로 되돌리기 위함).</li>
+ *   <li>0단계: 서울 밖 주소를 가진 기존 HOSPITAL 행을 정리한다.</li>
  *   <li>1단계: 관광공사 목록을 순회하며 각 항목을 카카오에서 검색.
  *       매칭되면 source=TOURISM_API+KAKAO, 안 되면 관광공사 원본 데이터만으로
  *       source=TOURISM_API로 저장한다.</li>
- *   <li>2단계: 관광공사 목록과 무관하게 강남구/서초구를 중심으로 카카오 병원 카테고리를
- *       전부 스윕해서, 1단계에서 이미 들어간 것과 겹치지 않는 새 병원을 source=KAKAO로 추가한다.</li>
+ *   <li>2단계: 피부시술 관련 키워드(리프팅/보톡스 등)로 서울 25개 구를 훑어 피부시술병원 후보를
+ *       찾고, {@code skinTreatmentConfidence}/{@code skinTreatmentSignals}를 채운다. 1단계에서
+ *       이미 들어간 행이면(같은 kakaoPlaceId) 그 행에 태그만 얹고, 없으면 source=KAKAO로 새로 만든다.</li>
  * </ol>
  */
 @Service
@@ -50,12 +50,35 @@ public class HospitalSyncService {
 
     // 카카오 검색은 한글 상호명 기준이라, 관광공사 기본 언어(ENG)가 아니라 한글로 명시 요청한다.
     private static final String KOREAN_LANG = "KOR";
-    private static final int DISTRICT_SWEEP_RADIUS_M = 5000;
-    private static final List<String> IN_SCOPE_ADDRESS_PREFIXES = List.of("서울 강남구", "서울 서초구");
+    private static final String IN_SCOPE_ADDRESS_PREFIX = "서울";
 
     // 의료관광 API(langDivCd) 언어 코드. place_translations의 locale("ja"/"en")과는 표기가 다르다.
     private static final String JAPANESE_LANG = "JPN";
     private static final String ENGLISH_LANG = "ENG";
+
+    /**
+     * 피부시술 후보 탐지용 검색 키워드 10개. "{구이름} {키워드}" 형태로 카카오 키워드 검색에 그대로 넣는다.
+     */
+    private static final List<String> TREATMENT_KEYWORDS = List.of(
+            "리프팅", "보톡스", "필러", "써마지", "울쎄라", "피부레이저", "여드름", "제모", "피부과", "피부클리닉");
+
+    /** 브랜드 하위 세그먼트가 붙어도(예: "...피부과 > CNP차앤박피부과") startsWith로 허용된다. */
+    private static final List<String> ALLOWED_HOSPITAL_CATEGORY_PREFIXES = List.of(
+            "의료,건강 > 병원 > 피부과",
+            "의료,건강 > 병원 > 성형외과",
+            "의료,건강 > 병원 > 일반의원",
+            "의료,건강 > 병원 > 가정의학과");
+
+    private static final String DERMATOLOGY_CATEGORY_PREFIX = "의료,건강 > 병원 > 피부과";
+    private static final String DERMATOLOGY_CATEGORY_SIGNAL = "kakao_category:피부과";
+
+    private static final String CONFIDENCE_CONFIRMED = "confirmed";
+    private static final String CONFIDENCE_HIGH = "high";
+    private static final String CONFIDENCE_MEDIUM = "medium";
+    private static final int HIGH_CONFIDENCE_SIGNAL_COUNT = 2;
+
+    /** 화면에는 시술 특화 여부와 무관하게 전부 "병원"으로 통일 표기한다(수집 근거는 skinTreatment*에 남음). */
+    private static final String HOSPITAL_DISPLAY_NAME = "병원";
 
     private final MedicalTourismService medicalTourismService;
     private final KakaoPlaceClient kakaoPlaceClient;
@@ -77,36 +100,39 @@ public class HospitalSyncService {
     public SyncResult sync() {
         Instant syncedAt = Instant.now();
 
-        List<MedicalTourismListItem> tourismItems = medicalTourismService.listAllGangnamSeocho(KOREAN_LANG);
+        List<MedicalTourismListItem> tourismItems = medicalTourismService.listAllSeoul(KOREAN_LANG);
         int pruned = pruneOutOfScope(tourismItems);
         Map<String, String> jaTitles = titleByContentId(JAPANESE_LANG);
         Map<String, String> enTitles = titleByContentId(ENGLISH_LANG);
         TourismPhaseResult tourismPhase = syncFromTourismApi(tourismItems, syncedAt, jaTitles, enTitles);
-        KakaoPhaseResult kakaoPhase = sweepKakaoOnly(syncedAt);
+        SkinTreatmentPhaseResult skinTreatmentPhase = collectSkinTreatmentHospitals(syncedAt);
 
         log.info(
                 "병원 동기화 완료: 범위밖삭제={}, 관광공사={}건 (양쪽매칭={}, 관광공사단독={}), "
-                        + "카카오 스윕={}건 발견 (카카오단독 신규={})",
+                        + "피부시술 후보={}건 (신규={}, 기존행에 태그={}, confirmed={}/high={}/medium={})",
                 pruned, tourismPhase.fetched, tourismPhase.matchedBoth, tourismPhase.tourismOnly,
-                kakaoPhase.sweepTotal, kakaoPhase.newlyCreated);
+                skinTreatmentPhase.candidatesFound, skinTreatmentPhase.newlyCreated, skinTreatmentPhase.merged,
+                skinTreatmentPhase.confirmed, skinTreatmentPhase.high, skinTreatmentPhase.medium);
 
         return new SyncResult(
                 pruned,
                 tourismPhase.fetched,
                 tourismPhase.matchedBoth,
                 tourismPhase.tourismOnly,
-                kakaoPhase.sweepTotal,
-                kakaoPhase.newlyCreated,
+                skinTreatmentPhase.candidatesFound,
+                skinTreatmentPhase.newlyCreated,
+                skinTreatmentPhase.merged,
+                skinTreatmentPhase.confirmed,
+                skinTreatmentPhase.high,
+                skinTreatmentPhase.medium,
                 syncedAt);
     }
 
     /**
-     * 강남구/서초구 밖 HOSPITAL 데이터(과거 서울 전체 동기화 잔재)를 삭제한다.
-     * ACCOMMODATION 행은 place_type으로 걸러내 절대 건드리지 않는다.
-     * 카카오 출처가 있는 행(addressName이 항상 한글)은 주소 접두어로 판단하고,
-     * TOURISM_API 단독 행은 addressName이 langDivCd와 무관하게 로마자 표기라
-     * 텍스트로 판단할 수 없으므로, 이번에 새로 가져온 강남/서초 목록에 그
-     * tourismContentId가 여전히 있는지로 판단한다.
+     * 서울 밖 HOSPITAL 데이터를 삭제한다. ACCOMMODATION 행은 place_type으로 걸러내 절대 건드리지 않는다.
+     * 카카오 출처가 있는 행(addressName이 항상 한글)은 주소 접두어로 판단하고, TOURISM_API 단독 행은
+     * addressName이 langDivCd와 무관하게 로마자 표기라 텍스트로 판단할 수 없으므로, 이번에 새로 가져온
+     * 서울 목록에 그 tourismContentId가 여전히 있는지로 판단한다.
      */
     private int pruneOutOfScope(List<MedicalTourismListItem> currentTourismItems) {
         Set<String> validTourismContentIds = new HashSet<>();
@@ -127,8 +153,7 @@ public class HospitalSyncService {
                 inScope = validTourismContentIds.contains(place.getTourismContentId());
             } else {
                 String address = place.getAddressName();
-                inScope = address != null
-                        && IN_SCOPE_ADDRESS_PREFIXES.stream().anyMatch(address::startsWith);
+                inScope = address != null && address.startsWith(IN_SCOPE_ADDRESS_PREFIX);
             }
             if (!inScope) {
                 outOfScope.add(place);
@@ -148,7 +173,7 @@ public class HospitalSyncService {
     private Map<String, String> titleByContentId(String medicalTourismLang) {
         Map<String, String> result = new HashMap<>();
         try {
-            for (MedicalTourismListItem item : medicalTourismService.listAllGangnamSeocho(medicalTourismLang)) {
+            for (MedicalTourismListItem item : medicalTourismService.listAllSeoul(medicalTourismLang)) {
                 if (StringUtils.hasText(item.contentId()) && StringUtils.hasText(item.title())) {
                     result.put(item.contentId(), item.title());
                 }
@@ -282,44 +307,112 @@ public class HospitalSyncService {
         applyMedicalTourismTranslations(place.getId(), item.contentId(), jaTitles, enTitles);
     }
 
-    private KakaoPhaseResult sweepKakaoOnly(Instant syncedAt) {
-        Map<String, KakaoPlace> deduped = new LinkedHashMap<>();
-        for (SeoulDistricts.Center district : SeoulDistricts.GANGNAM_SEOCHO) {
-            try {
-                List<KakaoPlace> found = kakaoPlaceClient.sweepHospitals(
-                        district.lat(), district.lng(), DISTRICT_SWEEP_RADIUS_M);
-                for (KakaoPlace place : found) {
-                    if (isHumanHospital(place)) {
-                        deduped.putIfAbsent(place.id(), place);
-                    }
+    /**
+     * "{구} {시술키워드}" 조합(25구 × 10키워드 = 250가지)으로 카카오 키워드 검색을 훑어 피부시술병원
+     * 후보를 찾는다. 같은 병원이 여러 조합에서 발견되면 kakaoPlaceId로 병합하고 발견된 키워드를 전부
+     * signals에 누적한다. 신뢰도는 다음 규칙으로 정한다:
+     * <ul>
+     *   <li>카테고리가 "...병원 > 피부과"(하위 브랜드 세그먼트 포함)로 시작 — signals 개수와 무관하게 confirmed</li>
+     *   <li>피부과가 아니고 signals 2개 이상 — high</li>
+     *   <li>피부과가 아니고 signals 1개 — medium</li>
+     * </ul>
+     * (키워드 검색으로만 후보를 발견하므로 signals가 0개인 경우는 애초에 생기지 않는다.)
+     * 이미 1단계(관광공사 매칭)로 들어와 있는 행이면 새로 만들지 않고 그 행에 태그만 얹는다.
+     */
+    private SkinTreatmentPhaseResult collectSkinTreatmentHospitals(Instant syncedAt) {
+        Map<String, SkinTreatmentCandidate> candidates = new LinkedHashMap<>();
+
+        for (SeoulDistricts.Center district : SeoulDistricts.ALL) {
+            for (String keyword : TREATMENT_KEYWORDS) {
+                String query = district.name() + " " + keyword;
+                List<KakaoPlace> found;
+                try {
+                    found = kakaoPlaceClient.searchHospitalKeywordAll(query);
+                } catch (Exception e) {
+                    log.warn("카카오 시술 키워드 검색 실패: query={}, error={}", query, e.getMessage());
+                    continue;
                 }
-            } catch (Exception e) {
-                log.warn("카카오 스윕 실패: district={}, error={}", district.name(), e.getMessage());
+                for (KakaoPlace place : found) {
+                    if (!isAllowedHospitalCategory(place.categoryName()) || !isInScope(place.addressName())) {
+                        continue;
+                    }
+                    candidates.computeIfAbsent(place.id(), id -> SkinTreatmentCandidate.of(place))
+                            .signals().add(keyword);
+                }
             }
         }
 
         int newlyCreated = 0;
-        for (KakaoPlace place : deduped.values()) {
-            if (hospitalAccommodationRepository.findByPlaceId(place.id()).isPresent()) {
-                continue; // 이미 1단계(관광공사 매칭)로 들어와 있음
+        int merged = 0;
+        int confirmed = 0;
+        int high = 0;
+        int medium = 0;
+
+        for (SkinTreatmentCandidate candidate : candidates.values()) {
+            boolean isDermatology = isDermatologyCategory(candidate.place().categoryName());
+
+            Set<String> signals = new LinkedHashSet<>();
+            if (isDermatology) {
+                signals.add(DERMATOLOGY_CATEGORY_SIGNAL);
             }
-            hospitalAccommodationRepository.save(new HospitalAccommodation(
-                    place.id(),
-                    null,
-                    place.placeName(),
-                    place.categoryGroupName(),
-                    place.addressName(),
-                    place.mapX(),
-                    place.mapY(),
-                    null,
-                    place.phone(),
-                    place.placeUrl(),
-                    PlaceType.HOSPITAL,
-                    SOURCE_KAKAO_ONLY,
-                    syncedAt));
-            newlyCreated++;
+            signals.addAll(candidate.signals());
+
+            String confidence;
+            if (isDermatology) {
+                confidence = CONFIDENCE_CONFIRMED;
+                confirmed++;
+            } else if (candidate.signals().size() >= HIGH_CONFIDENCE_SIGNAL_COUNT) {
+                confidence = CONFIDENCE_HIGH;
+                high++;
+            } else {
+                confidence = CONFIDENCE_MEDIUM;
+                medium++;
+            }
+
+            HospitalAccommodation place = hospitalAccommodationRepository.findByPlaceId(candidate.place().id()).orElse(null);
+            if (place == null) {
+                place = hospitalAccommodationRepository.save(new HospitalAccommodation(
+                        candidate.place().id(),
+                        null,
+                        candidate.place().placeName(),
+                        candidate.place().categoryGroupName(),
+                        candidate.place().addressName(),
+                        candidate.place().mapX(),
+                        candidate.place().mapY(),
+                        null,
+                        candidate.place().phone(),
+                        candidate.place().placeUrl(),
+                        PlaceType.HOSPITAL,
+                        SOURCE_KAKAO_ONLY,
+                        syncedAt));
+                newlyCreated++;
+            } else {
+                merged++;
+            }
+            place.applyMlTags(HOSPITAL_DISPLAY_NAME, confidence, String.join("|", signals));
         }
-        return new KakaoPhaseResult(deduped.size(), newlyCreated);
+
+        return new SkinTreatmentPhaseResult(candidates.size(), newlyCreated, merged, confirmed, high, medium);
+    }
+
+    private static boolean isAllowedHospitalCategory(String categoryName) {
+        if (categoryName == null) {
+            return false;
+        }
+        for (String prefix : ALLOWED_HOSPITAL_CATEGORY_PREFIXES) {
+            if (categoryName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDermatologyCategory(String categoryName) {
+        return categoryName != null && categoryName.startsWith(DERMATOLOGY_CATEGORY_PREFIX);
+    }
+
+    private static boolean isInScope(String addressName) {
+        return addressName != null && addressName.startsWith(IN_SCOPE_ADDRESS_PREFIX);
     }
 
     /**
@@ -362,10 +455,17 @@ public class HospitalSyncService {
         return title;
     }
 
+    private record SkinTreatmentCandidate(KakaoPlace place, Set<String> signals) {
+        static SkinTreatmentCandidate of(KakaoPlace place) {
+            return new SkinTreatmentCandidate(place, new LinkedHashSet<>());
+        }
+    }
+
     private record TourismPhaseResult(int fetched, int matchedBoth, int tourismOnly) {
     }
 
-    private record KakaoPhaseResult(int sweepTotal, int newlyCreated) {
+    private record SkinTreatmentPhaseResult(
+            int candidatesFound, int newlyCreated, int merged, int confirmed, int high, int medium) {
     }
 
     public record SyncResult(
@@ -373,8 +473,12 @@ public class HospitalSyncService {
             int tourismFetched,
             int matchedBoth,
             int tourismOnly,
-            int kakaoSweepTotal,
-            int kakaoOnlyNew,
+            int skinTreatmentCandidates,
+            int skinTreatmentNewlyCreated,
+            int skinTreatmentMerged,
+            int skinTreatmentConfirmed,
+            int skinTreatmentHigh,
+            int skinTreatmentMedium,
             Instant syncedAt) {
     }
 }
