@@ -10,6 +10,7 @@ import com.afterglow.config.KakaoProperties;
 import com.afterglow.config.MedicalTourismProperties;
 import com.afterglow.config.NotionProperties;
 import com.afterglow.config.OAuthProperties;
+import com.afterglow.config.PlaceTranslationBackfillProperties;
 import com.afterglow.config.SyncProperties;
 import com.afterglow.config.TourApiProperties;
 import org.springframework.boot.SpringApplication;
@@ -31,7 +32,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         AdminProperties.class,
         TourApiProperties.class,
         AccommodationSyncProperties.class,
-        AttractionSyncProperties.class
+        AttractionSyncProperties.class,
+        PlaceTranslationBackfillProperties.class
 })
 public class AfterglowBeApplication {
 

@@ -12,8 +12,24 @@ public class TourApiConfig {
 
     @Bean
     WebClient tourApiWebClient(TourApiProperties properties) {
+        return build(properties.baseUrl());
+    }
+
+    /** 일본어 번역(place_translations) 백필용 — JpnService2, KorService2와 endpoint/파라미터 형태는 동일. */
+    @Bean
+    WebClient tourApiJpnWebClient(TourApiProperties properties) {
+        return build(properties.jpnBaseUrl());
+    }
+
+    /** 영어 번역(place_translations) 백필용 — EngService2, KorService2와 endpoint/파라미터 형태는 동일. */
+    @Bean
+    WebClient tourApiEngWebClient(TourApiProperties properties) {
+        return build(properties.engBaseUrl());
+    }
+
+    private WebClient build(String baseUrl) {
         return WebClient.builder()
-                .baseUrl(properties.baseUrl())
+                .baseUrl(baseUrl)
                 .codecs(config -> config.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_BYTES))
                 .build();
     }

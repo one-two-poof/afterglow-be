@@ -8,6 +8,8 @@ import com.afterglow.service.HospitalSyncService.SyncResult;
 import com.afterglow.service.PlaceCsvImportService;
 import com.afterglow.service.PlaceCsvImportService.ImportResult;
 import com.afterglow.service.PlaceService;
+import com.afterglow.service.PlaceTranslationBackfillService;
+import com.afterglow.service.PlaceTranslationBackfillService.BackfillResult;
 import com.afterglow.web.dto.PlaceRequest;
 import com.afterglow.web.dto.PlaceResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,23 +38,30 @@ public class PlaceController {
     private static final String DEFAULT_HOSPITAL_ML_TAG_CSV_PATH =
             "data/raw/ml_data/gangnam_seocho_hospital_db.csv";
 
+    private static final String LANG_DESCRIPTION =
+            "응답 언어. 'ja' 또는 'en'만 지원하며, 생략하거나 다른 값을 주면 한국어 원본을 그대로 반환한다. "
+                    + "place_translations에 아직 번역이 없는 필드는 한국어 원본으로 폴백한다. 주소는 로케일과 무관하게 항상 한국어 원본.";
+
     private final PlaceService placeService;
     private final HospitalSyncService hospitalSyncService;
     private final AccommodationSyncService accommodationSyncService;
     private final AttractionSyncService attractionSyncService;
     private final PlaceCsvImportService placeCsvImportService;
+    private final PlaceTranslationBackfillService placeTranslationBackfillService;
 
     public PlaceController(
             PlaceService placeService,
             HospitalSyncService hospitalSyncService,
             AccommodationSyncService accommodationSyncService,
             AttractionSyncService attractionSyncService,
-            PlaceCsvImportService placeCsvImportService) {
+            PlaceCsvImportService placeCsvImportService,
+            PlaceTranslationBackfillService placeTranslationBackfillService) {
         this.placeService = placeService;
         this.hospitalSyncService = hospitalSyncService;
         this.accommodationSyncService = accommodationSyncService;
         this.attractionSyncService = attractionSyncService;
         this.placeCsvImportService = placeCsvImportService;
+        this.placeTranslationBackfillService = placeTranslationBackfillService;
     }
 
     @Operation(
@@ -63,8 +72,10 @@ public class PlaceController {
     @GetMapping
     public List<PlaceResponse> listPlaces(
             @Parameter(description = "장소명 부분 검색어 (생략 시 전체 목록)")
-            @RequestParam(required = false) String name) {
-        return placeService.listAll(name);
+            @RequestParam(required = false) String name,
+            @Parameter(description = LANG_DESCRIPTION)
+            @RequestParam(required = false) String lang) {
+        return placeService.listAll(name, lang);
     }
 
     @Operation(
@@ -75,8 +86,10 @@ public class PlaceController {
     public PlaceResponse getPlace(
             @PathVariable Long id,
             @Parameter(description = "이 id가 속한 테이블을 정한다 (HOSPITAL/ACCOMMODATION → hospitals_accommodations, ATTRACTION → attractions)")
-            @RequestParam PlaceType placeType) {
-        return placeService.getOne(id, placeType);
+            @RequestParam PlaceType placeType,
+            @Parameter(description = LANG_DESCRIPTION)
+            @RequestParam(required = false) String lang) {
+        return placeService.getOne(id, placeType, lang);
     }
 
     @Operation(
@@ -85,8 +98,10 @@ public class PlaceController {
     @GetMapping("/hospital")
     public List<PlaceResponse> listHospitals(
             @Parameter(description = "장소명 부분 검색어 (생략 시 병원 전체)")
-            @RequestParam(required = false) String name) {
-        return placeService.listByType(PlaceType.HOSPITAL, name);
+            @RequestParam(required = false) String name,
+            @Parameter(description = LANG_DESCRIPTION)
+            @RequestParam(required = false) String lang) {
+        return placeService.listByType(PlaceType.HOSPITAL, name, lang);
     }
 
     @Operation(
@@ -95,8 +110,10 @@ public class PlaceController {
     @GetMapping("/accommodation")
     public List<PlaceResponse> listAccommodations(
             @Parameter(description = "장소명 부분 검색어 (생략 시 숙소 전체)")
-            @RequestParam(required = false) String name) {
-        return placeService.listByType(PlaceType.ACCOMMODATION, name);
+            @RequestParam(required = false) String name,
+            @Parameter(description = LANG_DESCRIPTION)
+            @RequestParam(required = false) String lang) {
+        return placeService.listByType(PlaceType.ACCOMMODATION, name, lang);
     }
 
     @Operation(
@@ -105,8 +122,10 @@ public class PlaceController {
     @GetMapping("/attraction")
     public List<PlaceResponse> listAttractions(
             @Parameter(description = "장소명 부분 검색어 (생략 시 관광명소 전체)")
-            @RequestParam(required = false) String name) {
-        return placeService.listByType(PlaceType.ATTRACTION, name);
+            @RequestParam(required = false) String name,
+            @Parameter(description = LANG_DESCRIPTION)
+            @RequestParam(required = false) String lang) {
+        return placeService.listByType(PlaceType.ATTRACTION, name, lang);
     }
 
     @Operation(
@@ -178,7 +197,7 @@ public class PlaceController {
      * path 생략 시 병원 ML 태그 CSV를 백필 전용(createIfMissing=false)으로 처리.
      * 문화시설/백화점/드럭스토어/관광명소처럼 살아있는 동기화 소스가 없는 카테고리
      * (예: data/raw/ml_data/gangnam_seocho_places_with_constraints.csv, 도보 제약
-     * isIndoor/isHeatSource/isMassageSpot/walkHard/isNa 포함)는 path와
+     * isIndoor/isHeatSource/isMassageSpot/walkHard 포함)는 path와
      * createIfMissing=true, placeType을 명시해서 새 행도 만들도록 호출한다.
      * placeType은 createIfMissing=true일 때 새로 생성되는 행에만 쓰인다(기존 행 매칭 시엔 무시).
      */
@@ -197,5 +216,14 @@ public class PlaceController {
             @RequestParam(required = false, defaultValue = "HOSPITAL") PlaceType placeType) {
         Path csvPath = Path.of(path != null ? path : DEFAULT_HOSPITAL_ML_TAG_CSV_PATH);
         return placeCsvImportService.importFrom(csvPath, createIfMissing, placeType);
+    }
+
+    @Operation(
+            summary = "번역 백필 수동 트리거 (관리자)",
+            description = "TourAPI/의료관광 API 공식 번역이 없는 행(CSV·카카오 단독 소스 등)의 place_name/category_name "
+                    + "빈 자리를 SeedTranslationProvider로 채운다. 매일 새벽 5시 30분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+    @PostMapping("/backfill-translations")
+    public BackfillResult backfillTranslations() {
+        return placeTranslationBackfillService.backfill();
     }
 }

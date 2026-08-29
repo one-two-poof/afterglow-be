@@ -1,6 +1,7 @@
 package com.afterglow.service;
 
 import com.afterglow.domain.Attraction;
+import com.afterglow.domain.PlaceType;
 import com.afterglow.kakao.KakaoPlace;
 import com.afterglow.kakao.KakaoPlaceClient;
 import com.afterglow.repository.AttractionRepository;
@@ -9,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,10 +24,8 @@ import org.springframework.util.StringUtils;
  * (관광지/문화시설)은 카카오로 재검색해 매칭되면 기존 행(카카오 CSV import 포함)을 그대로 갱신하고,
  * 카카오 대응 카테고리가 없는 유형(쇼핑)이나 매칭 실패 건은 tourism_content_id로 재동기화 매칭한다.
  *
- * <p>attractions 테이블에는 카테고리 구분 전용 컬럼이 없어서, contentTypeId를 category_group_code에
- * 항상 강제로 저장한다(매칭 성공 시에도 카카오의 세부 코드 대신 이 값을 쓴다). category_name은 매칭
- * 성공 시 카카오의 ">" 계층 텍스트를 그대로 쓰고, 매칭 실패 시 {@link TourApiCategoryService}로
- * cat1/cat2/cat3 코드를 이름으로 풀어 같은 형식(">" 구분)으로 맞춘다.
+ * <p>category_name은 매칭 성공 시 카카오의 ">" 계층 텍스트를 그대로 쓰고, 매칭 실패 시
+ * {@link TourApiCategoryService}로 cat1/cat2/cat3 코드를 이름으로 풀어 같은 형식(">" 구분)으로 맞춘다.
  */
 @Service
 public class AttractionSyncService {
@@ -49,16 +49,19 @@ public class AttractionSyncService {
     private final TourApiCategoryService tourApiCategoryService;
     private final KakaoPlaceClient kakaoPlaceClient;
     private final AttractionRepository attractionRepository;
+    private final PlaceTranslationService placeTranslationService;
 
     public AttractionSyncService(
             TourApiService tourApiService,
             TourApiCategoryService tourApiCategoryService,
             KakaoPlaceClient kakaoPlaceClient,
-            AttractionRepository attractionRepository) {
+            AttractionRepository attractionRepository,
+            PlaceTranslationService placeTranslationService) {
         this.tourApiService = tourApiService;
         this.tourApiCategoryService = tourApiCategoryService;
         this.kakaoPlaceClient = kakaoPlaceClient;
         this.attractionRepository = attractionRepository;
+        this.placeTranslationService = placeTranslationService;
     }
 
     @Transactional
@@ -76,6 +79,9 @@ public class AttractionSyncService {
 
     private CategoryResult syncCategory(CategoryConfig category, Instant syncedAt) {
         List<TourApiListItem> items = tourApiService.listGangnamSeochoByContentType(category.contentTypeId());
+        // 같은 목록을 언어별로 한 번 더 조회해 contentId→title 맵을 미리 만들어 둔다(건별 API 호출 방지).
+        Map<String, String> jaTitles = tourApiService.titleByContentId(category.contentTypeId(), "ja");
+        Map<String, String> enTitles = tourApiService.titleByContentId(category.contentTypeId(), "en");
 
         int matchedBoth = 0;
         int tourismOnly = 0;
@@ -94,10 +100,10 @@ public class AttractionSyncService {
             }
 
             if (match.isPresent()) {
-                upsertMatched(item, match.get(), category, syncedAt);
+                upsertMatched(item, match.get(), category, syncedAt, jaTitles, enTitles);
                 matchedBoth++;
             } else {
-                boolean saved = upsertTourismOnly(item, category, syncedAt);
+                boolean saved = upsertTourismOnly(item, category, syncedAt, jaTitles, enTitles);
                 if (saved) {
                     tourismOnly++;
                 } else {
@@ -110,9 +116,24 @@ public class AttractionSyncService {
                 category.contentTypeId(), category.label(), items.size(), matchedBoth, tourismOnly, skippedNoCoords);
     }
 
-    private void upsertMatched(TourApiListItem item, KakaoPlace kakaoPlace, CategoryConfig category, Instant syncedAt) {
+    /** contentId가 이번 목록에 있으면 TourAPI 공식 번역을 적용한다(자리만 만들고, 없으면 백필 스케줄러가 나중에 채움). */
+    private void applyTourApiTranslations(
+            Long attractionId, String contentId, Map<String, String> jaTitles, Map<String, String> enTitles) {
+        if (contentId == null || contentId.isBlank()) {
+            return;
+        }
+        placeTranslationService.applyPlaceName(PlaceType.ATTRACTION, attractionId, "ja", jaTitles.get(contentId), "TOURAPI_JPN");
+        placeTranslationService.applyPlaceName(PlaceType.ATTRACTION, attractionId, "en", enTitles.get(contentId), "TOURAPI_ENG");
+    }
+
+    private void upsertMatched(
+            TourApiListItem item,
+            KakaoPlace kakaoPlace,
+            CategoryConfig category,
+            Instant syncedAt,
+            Map<String, String> jaTitles,
+            Map<String, String> enTitles) {
         Attraction attraction = attractionRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
-        String contentTypeId = String.valueOf(category.contentTypeId());
         String image = firstNonBlank(item.firstImage(), null);
         if (attraction == null) {
             attraction = new Attraction(
@@ -121,28 +142,21 @@ public class AttractionSyncService {
                     kakaoPlace.placeName(),
                     kakaoPlace.categoryName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    contentTypeId,
-                    category.label(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     SOURCE_BOTH,
                     syncedAt);
-            attraction.applyMlTags(null, category.label(), null, null, null, null, null, null);
+            attraction.applyMlTags(category.label(), null, null, null, null);
         } else {
             attraction.updateFromSync(
                     kakaoPlace.placeName(),
-                    kakaoPlace.categoryName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    contentTypeId,
-                    category.label(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     category.label(),
@@ -150,11 +164,17 @@ public class AttractionSyncService {
                     syncedAt);
         }
         applyWalkConstraintsIfMissing(attraction, category);
-        attractionRepository.save(attraction);
+        attraction = attractionRepository.save(attraction);
+        applyTourApiTranslations(attraction.getId(), item.contentId(), jaTitles, enTitles);
     }
 
     /** 카카오 매칭 실패/불가 — 관광공사 원본만으로 저장. 좌표가 없으면 스킵하고 false를 반환한다. */
-    private boolean upsertTourismOnly(TourApiListItem item, CategoryConfig category, Instant syncedAt) {
+    private boolean upsertTourismOnly(
+            TourApiListItem item,
+            CategoryConfig category,
+            Instant syncedAt,
+            Map<String, String> jaTitles,
+            Map<String, String> enTitles) {
         BigDecimal mapX = parseOrNull(item.mapX());
         BigDecimal mapY = parseOrNull(item.mapY());
         if (mapX == null || mapY == null) {
@@ -162,7 +182,6 @@ public class AttractionSyncService {
             return false;
         }
 
-        String contentTypeId = String.valueOf(category.contentTypeId());
         String address = firstNonBlank(item.addr1(), item.addr2());
         String hierarchicalCategoryName = firstNonBlank(
                 tourApiCategoryService.resolveHierarchy(item.cat1(), item.cat2(), item.cat3()), category.label());
@@ -174,28 +193,21 @@ public class AttractionSyncService {
                     item.title(),
                     hierarchicalCategoryName,
                     address,
-                    null,
                     mapX,
                     mapY,
                     firstNonBlank(item.firstImage(), null),
-                    contentTypeId,
-                    category.label(),
                     item.tel(),
                     null,
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
-            attraction.applyMlTags(null, category.label(), null, null, null, null, null, null);
+            attraction.applyMlTags(category.label(), null, null, null, null);
         } else {
             attraction.updateFromSync(
                     item.title(),
-                    hierarchicalCategoryName,
                     address,
-                    attraction.getRoadAddressName(),
                     mapX,
                     mapY,
                     firstNonBlank(item.firstImage(), null),
-                    contentTypeId,
-                    category.label(),
                     firstNonBlank(item.tel(), attraction.getPhone()),
                     attraction.getPlaceUrl(),
                     category.label(),
@@ -203,7 +215,8 @@ public class AttractionSyncService {
                     syncedAt);
         }
         applyWalkConstraintsIfMissing(attraction, category);
-        attractionRepository.save(attraction);
+        attraction = attractionRepository.save(attraction);
+        applyTourApiTranslations(attraction.getId(), item.contentId(), jaTitles, enTitles);
         return true;
     }
 

@@ -10,6 +10,7 @@ import com.afterglow.web.dto.MedicalTourismListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,17 +53,24 @@ public class HospitalSyncService {
     private static final int DISTRICT_SWEEP_RADIUS_M = 5000;
     private static final List<String> IN_SCOPE_ADDRESS_PREFIXES = List.of("서울 강남구", "서울 서초구");
 
+    // 의료관광 API(langDivCd) 언어 코드. place_translations의 locale("ja"/"en")과는 표기가 다르다.
+    private static final String JAPANESE_LANG = "JPN";
+    private static final String ENGLISH_LANG = "ENG";
+
     private final MedicalTourismService medicalTourismService;
     private final KakaoPlaceClient kakaoPlaceClient;
     private final HospitalAccommodationRepository hospitalAccommodationRepository;
+    private final PlaceTranslationService placeTranslationService;
 
     public HospitalSyncService(
             MedicalTourismService medicalTourismService,
             KakaoPlaceClient kakaoPlaceClient,
-            HospitalAccommodationRepository hospitalAccommodationRepository) {
+            HospitalAccommodationRepository hospitalAccommodationRepository,
+            PlaceTranslationService placeTranslationService) {
         this.medicalTourismService = medicalTourismService;
         this.kakaoPlaceClient = kakaoPlaceClient;
         this.hospitalAccommodationRepository = hospitalAccommodationRepository;
+        this.placeTranslationService = placeTranslationService;
     }
 
     @Transactional
@@ -71,7 +79,9 @@ public class HospitalSyncService {
 
         List<MedicalTourismListItem> tourismItems = medicalTourismService.listAllGangnamSeocho(KOREAN_LANG);
         int pruned = pruneOutOfScope(tourismItems);
-        TourismPhaseResult tourismPhase = syncFromTourismApi(tourismItems, syncedAt);
+        Map<String, String> jaTitles = titleByContentId(JAPANESE_LANG);
+        Map<String, String> enTitles = titleByContentId(ENGLISH_LANG);
+        TourismPhaseResult tourismPhase = syncFromTourismApi(tourismItems, syncedAt, jaTitles, enTitles);
         KakaoPhaseResult kakaoPhase = sweepKakaoOnly(syncedAt);
 
         log.info(
@@ -130,7 +140,39 @@ public class HospitalSyncService {
         return outOfScope.size();
     }
 
-    private TourismPhaseResult syncFromTourismApi(List<MedicalTourismListItem> items, Instant syncedAt) {
+    /**
+     * place_translations 백필 전용 — 의료관광 목록 API는 langDivCd로 이미 언어별 title을 내려주므로,
+     * (TourAPI와 달리) 건별 상세 조회 없이 목록을 언어별로 한 번 더 호출해 contentId→title 맵을 만든다.
+     * 실패해도 동기화 본 작업을 막지 않도록 예외를 던지지 않는다.
+     */
+    private Map<String, String> titleByContentId(String medicalTourismLang) {
+        Map<String, String> result = new HashMap<>();
+        try {
+            for (MedicalTourismListItem item : medicalTourismService.listAllGangnamSeocho(medicalTourismLang)) {
+                if (StringUtils.hasText(item.contentId()) && StringUtils.hasText(item.title())) {
+                    result.put(item.contentId(), item.title());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("의료관광 API {} 번역 목록 조회 실패: {}", medicalTourismLang, e.getMessage());
+        }
+        return result;
+    }
+
+    /** contentId가 이번 목록에 있으면 의료관광 API 공식 번역을 적용한다(없으면 백필 스케줄러가 나중에 채움). */
+    private void applyMedicalTourismTranslations(
+            Long placeId, String contentId, Map<String, String> jaTitles, Map<String, String> enTitles) {
+        if (!StringUtils.hasText(contentId)) {
+            return;
+        }
+        placeTranslationService.applyPlaceName(
+                PlaceType.HOSPITAL, placeId, "ja", jaTitles.get(contentId), "MEDICALTOURISM_JPN");
+        placeTranslationService.applyPlaceName(
+                PlaceType.HOSPITAL, placeId, "en", enTitles.get(contentId), "MEDICALTOURISM_ENG");
+    }
+
+    private TourismPhaseResult syncFromTourismApi(
+            List<MedicalTourismListItem> items, Instant syncedAt, Map<String, String> jaTitles, Map<String, String> enTitles) {
         int matchedBoth = 0;
         int tourismOnly = 0;
 
@@ -147,31 +189,34 @@ public class HospitalSyncService {
             String image = firstNonBlank(item.orgImage(), item.thumbImage());
 
             if (match.isPresent() && isHumanHospital(match.get())) {
-                upsertMatched(item, match.get(), image, syncedAt);
+                upsertMatched(item, match.get(), image, syncedAt, jaTitles, enTitles);
                 matchedBoth++;
             } else {
-                upsertTourismOnly(item, image, syncedAt);
+                upsertTourismOnly(item, image, syncedAt, jaTitles, enTitles);
                 tourismOnly++;
             }
         }
         return new TourismPhaseResult(items.size(), matchedBoth, tourismOnly);
     }
 
-    private void upsertMatched(MedicalTourismListItem item, KakaoPlace kakaoPlace, String image, Instant syncedAt) {
+    private void upsertMatched(
+            MedicalTourismListItem item,
+            KakaoPlace kakaoPlace,
+            String image,
+            Instant syncedAt,
+            Map<String, String> jaTitles,
+            Map<String, String> enTitles) {
         HospitalAccommodation place = hospitalAccommodationRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
         if (place == null) {
-            hospitalAccommodationRepository.save(new HospitalAccommodation(
+            place = hospitalAccommodationRepository.save(new HospitalAccommodation(
                     kakaoPlace.id(),
                     item.contentId(),
                     kakaoPlace.placeName(),
                     kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    kakaoPlace.categoryGroupCode(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     PlaceType.HOSPITAL,
@@ -180,22 +225,24 @@ public class HospitalSyncService {
         } else {
             place.updateFromSync(
                     kakaoPlace.placeName(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    kakaoPlace.categoryGroupCode(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     SOURCE_BOTH,
                     syncedAt);
         }
+        applyMedicalTourismTranslations(place.getId(), item.contentId(), jaTitles, enTitles);
     }
 
-    private void upsertTourismOnly(MedicalTourismListItem item, String image, Instant syncedAt) {
+    private void upsertTourismOnly(
+            MedicalTourismListItem item,
+            String image,
+            Instant syncedAt,
+            Map<String, String> jaTitles,
+            Map<String, String> enTitles) {
         BigDecimal mapX = parseOrNull(item.mapX());
         BigDecimal mapY = parseOrNull(item.mapY());
         if (mapX == null || mapY == null) {
@@ -206,18 +253,15 @@ public class HospitalSyncService {
         HospitalAccommodation place = hospitalAccommodationRepository.findByTourismContentId(item.contentId()).orElse(null);
         String address = firstNonBlank(item.baseAddr(), item.detailAddr());
         if (place == null) {
-            hospitalAccommodationRepository.save(new HospitalAccommodation(
+            place = hospitalAccommodationRepository.save(new HospitalAccommodation(
                     null,
                     item.contentId(),
                     item.title(),
                     null,
                     address,
-                    null,
                     mapX,
                     mapY,
                     image,
-                    null,
-                    null,
                     item.tel(),
                     null,
                     PlaceType.HOSPITAL,
@@ -226,19 +270,16 @@ public class HospitalSyncService {
         } else {
             place.updateFromSync(
                     item.title(),
-                    place.getCategoryName(),
                     address,
-                    place.getRoadAddressName(),
                     mapX,
                     mapY,
                     image,
-                    place.getCategoryGroupCode(),
-                    place.getCategoryGroupName(),
                     firstNonBlank(item.tel(), place.getPhone()),
                     place.getPlaceUrl(),
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
         }
+        applyMedicalTourismTranslations(place.getId(), item.contentId(), jaTitles, enTitles);
     }
 
     private KakaoPhaseResult sweepKakaoOnly(Instant syncedAt) {
@@ -268,12 +309,9 @@ public class HospitalSyncService {
                     place.placeName(),
                     place.categoryGroupName(),
                     place.addressName(),
-                    place.roadAddressName(),
                     place.mapX(),
                     place.mapY(),
                     null,
-                    place.categoryGroupCode(),
-                    place.categoryGroupName(),
                     place.phone(),
                     place.placeUrl(),
                     PlaceType.HOSPITAL,

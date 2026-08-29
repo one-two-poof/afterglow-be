@@ -9,6 +9,7 @@ import com.afterglow.web.dto.TourApiListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,20 +35,26 @@ public class AccommodationSyncService {
     private final TourApiService tourApiService;
     private final KakaoPlaceClient kakaoPlaceClient;
     private final HospitalAccommodationRepository hospitalAccommodationRepository;
+    private final PlaceTranslationService placeTranslationService;
 
     public AccommodationSyncService(
             TourApiService tourApiService,
             KakaoPlaceClient kakaoPlaceClient,
-            HospitalAccommodationRepository hospitalAccommodationRepository) {
+            HospitalAccommodationRepository hospitalAccommodationRepository,
+            PlaceTranslationService placeTranslationService) {
         this.tourApiService = tourApiService;
         this.kakaoPlaceClient = kakaoPlaceClient;
         this.hospitalAccommodationRepository = hospitalAccommodationRepository;
+        this.placeTranslationService = placeTranslationService;
     }
 
     @Transactional
     public SyncResult sync() {
         Instant syncedAt = Instant.now();
         List<TourApiListItem> items = tourApiService.listGangnamSeochoByContentType(ACCOMMODATION_CONTENT_TYPE_ID);
+        // 같은 목록을 언어별로 한 번 더 조회해 contentId→title 맵을 미리 만들어 둔다(건별 API 호출 방지).
+        Map<String, String> jaTitles = tourApiService.titleByContentId(ACCOMMODATION_CONTENT_TYPE_ID, "ja");
+        Map<String, String> enTitles = tourApiService.titleByContentId(ACCOMMODATION_CONTENT_TYPE_ID, "en");
 
         int matchedBoth = 0;
         int tourismOnly = 0;
@@ -64,10 +71,10 @@ public class AccommodationSyncService {
             }
 
             if (match.isPresent()) {
-                upsertMatched(item, match.get(), syncedAt);
+                upsertMatched(item, match.get(), syncedAt, jaTitles, enTitles);
                 matchedBoth++;
             } else {
-                boolean saved = upsertTourismOnly(item, syncedAt);
+                boolean saved = upsertTourismOnly(item, syncedAt, jaTitles, enTitles);
                 if (saved) {
                     tourismOnly++;
                 } else {
@@ -83,22 +90,34 @@ public class AccommodationSyncService {
         return new SyncResult(items.size(), matchedBoth, tourismOnly, skippedNoCoords, syncedAt);
     }
 
-    private void upsertMatched(TourApiListItem item, KakaoPlace kakaoPlace, Instant syncedAt) {
+    /** contentId가 이번 목록에 있으면 TourAPI 공식 번역을 적용한다(자리만 만들고, 없으면 백필 스케줄러가 나중에 채움). */
+    private void applyTourApiTranslations(
+            Long placeId, String contentId, Map<String, String> jaTitles, Map<String, String> enTitles) {
+        if (contentId == null || contentId.isBlank()) {
+            return;
+        }
+        placeTranslationService.applyPlaceName(PlaceType.ACCOMMODATION, placeId, "ja", jaTitles.get(contentId), "TOURAPI_JPN");
+        placeTranslationService.applyPlaceName(PlaceType.ACCOMMODATION, placeId, "en", enTitles.get(contentId), "TOURAPI_ENG");
+    }
+
+    private void upsertMatched(
+            TourApiListItem item,
+            KakaoPlace kakaoPlace,
+            Instant syncedAt,
+            Map<String, String> jaTitles,
+            Map<String, String> enTitles) {
         HospitalAccommodation place = hospitalAccommodationRepository.findByPlaceId(kakaoPlace.id()).orElse(null);
         String image = firstNonBlank(item.firstImage(), null);
         if (place == null) {
-            hospitalAccommodationRepository.save(new HospitalAccommodation(
+            place = hospitalAccommodationRepository.save(new HospitalAccommodation(
                     kakaoPlace.id(),
                     item.contentId(),
                     kakaoPlace.placeName(),
                     kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    kakaoPlace.categoryGroupCode(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     PlaceType.ACCOMMODATION,
@@ -107,23 +126,21 @@ public class AccommodationSyncService {
         } else {
             place.updateFromSync(
                     kakaoPlace.placeName(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.addressName(),
-                    kakaoPlace.roadAddressName(),
                     kakaoPlace.mapX(),
                     kakaoPlace.mapY(),
                     image,
-                    kakaoPlace.categoryGroupCode(),
-                    kakaoPlace.categoryGroupName(),
                     kakaoPlace.phone(),
                     kakaoPlace.placeUrl(),
                     SOURCE_BOTH,
                     syncedAt);
         }
+        applyTourApiTranslations(place.getId(), item.contentId(), jaTitles, enTitles);
     }
 
     /** 카카오 매칭 실패 — 관광공사 원본만으로 저장. 좌표가 없으면 스킵하고 false를 반환한다. */
-    private boolean upsertTourismOnly(TourApiListItem item, Instant syncedAt) {
+    private boolean upsertTourismOnly(
+            TourApiListItem item, Instant syncedAt, Map<String, String> jaTitles, Map<String, String> enTitles) {
         BigDecimal mapX = parseOrNull(item.mapX());
         BigDecimal mapY = parseOrNull(item.mapY());
         if (mapX == null || mapY == null) {
@@ -134,18 +151,15 @@ public class AccommodationSyncService {
         String address = firstNonBlank(item.addr1(), item.addr2());
         HospitalAccommodation place = hospitalAccommodationRepository.findByTourismContentId(item.contentId()).orElse(null);
         if (place == null) {
-            hospitalAccommodationRepository.save(new HospitalAccommodation(
+            place = hospitalAccommodationRepository.save(new HospitalAccommodation(
                     null,
                     item.contentId(),
                     item.title(),
                     "숙박",
                     address,
-                    null,
                     mapX,
                     mapY,
                     firstNonBlank(item.firstImage(), null),
-                    String.valueOf(ACCOMMODATION_CONTENT_TYPE_ID),
-                    "숙박",
                     item.tel(),
                     null,
                     PlaceType.ACCOMMODATION,
@@ -154,19 +168,16 @@ public class AccommodationSyncService {
         } else {
             place.updateFromSync(
                     item.title(),
-                    place.getCategoryName(),
                     address,
-                    place.getRoadAddressName(),
                     mapX,
                     mapY,
                     firstNonBlank(item.firstImage(), null),
-                    place.getCategoryGroupCode(),
-                    place.getCategoryGroupName(),
                     firstNonBlank(item.tel(), place.getPhone()),
                     place.getPlaceUrl(),
                     SOURCE_TOURISM_ONLY,
                     syncedAt);
         }
+        applyTourApiTranslations(place.getId(), item.contentId(), jaTitles, enTitles);
         return true;
     }
 

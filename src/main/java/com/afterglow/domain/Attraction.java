@@ -39,9 +39,6 @@ public class Attraction {
     @Column(name = "address_name", length = 512)
     private String addressName;
 
-    @Column(name = "road_address_name", length = 512)
-    private String roadAddressName;
-
     @Column(name = "map_x", nullable = false, precision = 12, scale = 8)
     private BigDecimal mapX;
 
@@ -54,26 +51,14 @@ public class Attraction {
     @Column(name = "image_url_overridden", nullable = false)
     private boolean imageUrlOverridden;
 
-    @Column(name = "category_group_code", length = 16)
-    private String categoryGroupCode;
-
-    @Column(name = "category_group_name", length = 64)
-    private String categoryGroupName;
-
     @Column(length = 32)
     private String phone;
 
     @Column(name = "place_url", length = 512)
     private String placeUrl;
 
-    @Column(name = "primary_type", length = 64)
-    private String primaryType;
-
     @Column(name = "primary_type_name", length = 128)
     private String primaryTypeName;
-
-    @Column(name = "collection_types", length = 256)
-    private String collectionTypes;
 
     /** 실내 여부. */
     @Column(name = "is_indoor")
@@ -91,10 +76,6 @@ public class Attraction {
     @Column(name = "walk_hard")
     private Integer walkHard;
 
-    /** ML 라벨링 단계에서 결측치로 표시된 행인지 여부. */
-    @Column(name = "is_na")
-    private Boolean isNa;
-
     /** CSV_IMPORT(CSV 통째로 import) / MANUAL(관리 페이지 직접 입력) */
     @Column(nullable = false, length = 32)
     private String source;
@@ -111,12 +92,9 @@ public class Attraction {
             String placeName,
             String categoryName,
             String addressName,
-            String roadAddressName,
             BigDecimal mapX,
             BigDecimal mapY,
             String imageUrl,
-            String categoryGroupCode,
-            String categoryGroupName,
             String phone,
             String placeUrl,
             String source,
@@ -126,13 +104,10 @@ public class Attraction {
         this.placeName = placeName;
         this.categoryName = categoryName;
         this.addressName = addressName;
-        this.roadAddressName = roadAddressName;
         this.mapX = mapX;
         this.mapY = mapY;
         this.imageUrl = imageUrl;
         this.imageUrlOverridden = false;
-        this.categoryGroupCode = categoryGroupCode;
-        this.categoryGroupName = categoryGroupName;
         this.phone = phone;
         this.placeUrl = placeUrl;
         this.source = source;
@@ -141,22 +116,16 @@ public class Attraction {
 
     /** ML 태그 CSV 백필 전용. */
     public void applyMlTags(
-            String primaryType,
             String primaryTypeName,
-            String collectionTypes,
             Boolean isIndoor,
             Boolean isHeatSource,
             Boolean isMassageSpot,
-            Integer walkHard,
-            Boolean isNa) {
-        this.primaryType = primaryType;
+            Integer walkHard) {
         this.primaryTypeName = primaryTypeName;
-        this.collectionTypes = collectionTypes;
         this.isIndoor = isIndoor;
         this.isHeatSource = isHeatSource;
         this.isMassageSpot = isMassageSpot;
         this.walkHard = walkHard;
-        this.isNa = isNa;
     }
 
     /**
@@ -176,18 +145,15 @@ public class Attraction {
             String placeId,
             String placeName,
             String categoryName,
-            String categoryGroupCode,
-            String categoryGroupName,
             String phone,
             String addressName,
-            String roadAddressName,
             String placeUrl,
             BigDecimal mapX,
             BigDecimal mapY,
             Instant syncedAt) {
         return new Attraction(
-                placeId, null, placeName, categoryName, addressName, roadAddressName,
-                mapX, mapY, null, categoryGroupCode, categoryGroupName, phone, placeUrl,
+                placeId, null, placeName, categoryName, addressName,
+                mapX, mapY, null, phone, placeUrl,
                 "CSV_IMPORT", syncedAt);
     }
 
@@ -195,33 +161,27 @@ public class Attraction {
      * 관광공사 TourAPI + 카카오 동기화 시 호출. image_url은 수동으로 override된 경우 건드리지 않고,
      * override되지 않았더라도 이번 응답에 이미지가 없으면 기존 값을 지우지 않고 그대로 둔다 —
      * 값이 있을 때만 교체한다.
+     * categoryName은 최초 생성 시에만 값이 들어가고, 이후 재동기화에서는
+     * 절대 덮어쓰지 않는다(수동 분류/보정이 이 필드에 쌓일 수 있어서).
      */
     public void updateFromSync(
             String placeName,
-            String categoryName,
             String addressName,
-            String roadAddressName,
             BigDecimal mapX,
             BigDecimal mapY,
             String imageUrl,
-            String categoryGroupCode,
-            String categoryGroupName,
             String phone,
             String placeUrl,
             String primaryTypeName,
             String source,
             Instant syncedAt) {
         this.placeName = placeName;
-        this.categoryName = categoryName;
         this.addressName = addressName;
-        this.roadAddressName = roadAddressName;
         this.mapX = mapX;
         this.mapY = mapY;
         if (!this.imageUrlOverridden && imageUrl != null && !imageUrl.isBlank()) {
             this.imageUrl = imageUrl;
         }
-        this.categoryGroupCode = categoryGroupCode;
-        this.categoryGroupName = categoryGroupName;
         this.phone = phone;
         this.placeUrl = placeUrl;
         this.primaryTypeName = primaryTypeName;
@@ -233,9 +193,7 @@ public class Attraction {
     public void applyAdminEdit(
             String placeName,
             String categoryName,
-            String categoryGroupName,
             String addressName,
-            String roadAddressName,
             BigDecimal mapX,
             BigDecimal mapY,
             String imageUrl,
@@ -243,9 +201,7 @@ public class Attraction {
             String placeUrl) {
         this.placeName = placeName;
         this.categoryName = categoryName;
-        this.categoryGroupName = categoryGroupName;
         this.addressName = addressName;
-        this.roadAddressName = roadAddressName;
         this.mapX = mapX;
         this.mapY = mapY;
         this.imageUrl = imageUrl;
@@ -261,23 +217,17 @@ public class Attraction {
     public String getPlaceName() { return placeName; }
     public String getCategoryName() { return categoryName; }
     public String getAddressName() { return addressName; }
-    public String getRoadAddressName() { return roadAddressName; }
     public BigDecimal getMapX() { return mapX; }
     public BigDecimal getMapY() { return mapY; }
     public String getImageUrl() { return imageUrl; }
     public boolean isImageUrlOverridden() { return imageUrlOverridden; }
-    public String getCategoryGroupCode() { return categoryGroupCode; }
-    public String getCategoryGroupName() { return categoryGroupName; }
     public String getPhone() { return phone; }
     public String getPlaceUrl() { return placeUrl; }
-    public String getPrimaryType() { return primaryType; }
     public String getPrimaryTypeName() { return primaryTypeName; }
-    public String getCollectionTypes() { return collectionTypes; }
     public Boolean getIsIndoor() { return isIndoor; }
     public Boolean getIsHeatSource() { return isHeatSource; }
     public Boolean getIsMassageSpot() { return isMassageSpot; }
     public Integer getWalkHard() { return walkHard; }
-    public Boolean getIsNa() { return isNa; }
     public String getSource() { return source; }
     public Instant getSyncedAt() { return syncedAt; }
 }

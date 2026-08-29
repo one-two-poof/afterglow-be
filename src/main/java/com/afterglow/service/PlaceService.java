@@ -2,6 +2,7 @@ package com.afterglow.service;
 
 import com.afterglow.domain.Attraction;
 import com.afterglow.domain.HospitalAccommodation;
+import com.afterglow.domain.PlaceTranslation;
 import com.afterglow.domain.PlaceType;
 import com.afterglow.repository.AttractionRepository;
 import com.afterglow.repository.HospitalAccommodationRepository;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,15 +29,18 @@ public class PlaceService {
 
     private final HospitalAccommodationRepository hospitalAccommodationRepository;
     private final AttractionRepository attractionRepository;
+    private final PlaceTranslationService placeTranslationService;
 
     public PlaceService(
             HospitalAccommodationRepository hospitalAccommodationRepository,
-            AttractionRepository attractionRepository) {
+            AttractionRepository attractionRepository,
+            PlaceTranslationService placeTranslationService) {
         this.hospitalAccommodationRepository = hospitalAccommodationRepository;
         this.attractionRepository = attractionRepository;
+        this.placeTranslationService = placeTranslationService;
     }
 
-    public List<PlaceResponse> listAll(String name) {
+    public List<PlaceResponse> listAll(String name, String lang) {
         List<HospitalAccommodation> hospitalsAccommodations = StringUtils.hasText(name)
                 ? hospitalAccommodationRepository.findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(name.trim())
                 : hospitalAccommodationRepository.findAllByOrderByPlaceNameAsc();
@@ -47,27 +52,51 @@ public class PlaceService {
         hospitalsAccommodations.stream().map(PlaceResponse::from).forEach(combined::add);
         attractions.stream().map(PlaceResponse::from).forEach(combined::add);
         combined.sort(Comparator.comparing(PlaceResponse::placeName));
-        return combined;
+        return applyLocale(combined, lang);
     }
 
-    public List<PlaceResponse> listByType(PlaceType placeType, String name) {
+    public List<PlaceResponse> listByType(PlaceType placeType, String name, String lang) {
         if (placeType == PlaceType.ATTRACTION) {
             List<Attraction> attractions = StringUtils.hasText(name)
                     ? attractionRepository.findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(name.trim())
                     : attractionRepository.findAllByOrderByPlaceNameAsc();
-            return attractions.stream().map(PlaceResponse::from).toList();
+            return applyLocale(attractions.stream().map(PlaceResponse::from).toList(), lang);
         }
         List<HospitalAccommodation> places = StringUtils.hasText(name)
                 ? hospitalAccommodationRepository.findByPlaceTypeAndPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(
                         placeType, name.trim())
                 : hospitalAccommodationRepository.findByPlaceTypeOrderByPlaceNameAsc(placeType);
-        return places.stream().map(PlaceResponse::from).toList();
+        return applyLocale(places.stream().map(PlaceResponse::from).toList(), lang);
     }
 
-    public PlaceResponse getOne(Long id, PlaceType placeType) {
-        return placeType == PlaceType.ATTRACTION
+    public PlaceResponse getOne(Long id, PlaceType placeType, String lang) {
+        PlaceResponse response = placeType == PlaceType.ATTRACTION
                 ? PlaceResponse.from(findAttractionOrThrow(id))
                 : PlaceResponse.from(findHospitalAccommodationOrThrow(id));
+        String locale = PlaceTranslationService.normalizeLocale(lang);
+        if (locale == null) {
+            return response;
+        }
+        PlaceTranslation translation = placeTranslationService
+                .findByPlacesAndLocale(List.of(placeType), List.of(id), locale)
+                .get(PlaceTranslationService.key(placeType, id));
+        return PlaceResponse.withLocaleOverride(response, translation);
+    }
+
+    /** 배치 1건으로 번역을 조회해 얹는다(건별 조회 시 N+1이 되므로). lang이 지원 로케일이 아니면 원본 그대로. */
+    private List<PlaceResponse> applyLocale(List<PlaceResponse> responses, String lang) {
+        String locale = PlaceTranslationService.normalizeLocale(lang);
+        if (locale == null || responses.isEmpty()) {
+            return responses;
+        }
+        List<PlaceType> placeTypes = responses.stream().map(PlaceResponse::placeType).distinct().toList();
+        List<Long> placeIds = responses.stream().map(PlaceResponse::id).toList();
+        Map<String, PlaceTranslation> translations =
+                placeTranslationService.findByPlacesAndLocale(placeTypes, placeIds, locale);
+        return responses.stream()
+                .map(r -> PlaceResponse.withLocaleOverride(
+                        r, translations.get(PlaceTranslationService.key(r.placeType(), r.id()))))
+                .toList();
     }
 
     @Transactional
@@ -81,25 +110,19 @@ public class PlaceService {
                     request.placeName(),
                     request.categoryName(),
                     request.addressName(),
-                    request.roadAddressName(),
                     request.mapX(),
                     request.mapY(),
                     request.image(),
-                    null,
-                    request.categoryGroupName(),
                     request.phone(),
                     request.placeUrl(),
                     "MANUAL",
                     Instant.now());
             attraction.applyMlTags(
-                    request.primaryType(),
                     request.primaryTypeName(),
-                    request.collectionTypes(),
                     request.isIndoor(),
                     request.isHeatSource(),
                     request.isMassageSpot(),
-                    request.walkHard(),
-                    request.isNa());
+                    request.walkHard());
             return PlaceResponse.from(attractionRepository.save(attraction));
         }
 
@@ -109,21 +132,16 @@ public class PlaceService {
                 request.placeName(),
                 request.categoryName(),
                 request.addressName(),
-                request.roadAddressName(),
                 request.mapX(),
                 request.mapY(),
                 request.image(),
-                null,
-                request.categoryGroupName(),
                 request.phone(),
                 request.placeUrl(),
                 placeType,
                 "MANUAL",
                 Instant.now());
         place.applyMlTags(
-                request.primaryType(),
                 request.primaryTypeName(),
-                request.collectionTypes(),
                 request.skinTreatmentConfidence(),
                 request.skinTreatmentSignals());
         return PlaceResponse.from(hospitalAccommodationRepository.save(place));
@@ -140,23 +158,18 @@ public class PlaceService {
             attraction.applyAdminEdit(
                     request.placeName(),
                     request.categoryName(),
-                    request.categoryGroupName(),
                     request.addressName(),
-                    request.roadAddressName(),
                     request.mapX(),
                     request.mapY(),
                     request.image(),
                     request.phone(),
                     request.placeUrl());
             attraction.applyMlTags(
-                    request.primaryType(),
                     request.primaryTypeName(),
-                    request.collectionTypes(),
                     request.isIndoor(),
                     request.isHeatSource(),
                     request.isMassageSpot(),
-                    request.walkHard(),
-                    request.isNa());
+                    request.walkHard());
             return PlaceResponse.from(attraction);
         }
 
@@ -168,9 +181,7 @@ public class PlaceService {
         place.applyAdminEdit(
                 request.placeName(),
                 request.categoryName(),
-                request.categoryGroupName(),
                 request.addressName(),
-                request.roadAddressName(),
                 request.mapX(),
                 request.mapY(),
                 request.image(),
@@ -178,9 +189,7 @@ public class PlaceService {
                 request.placeUrl(),
                 request.placeType());
         place.applyMlTags(
-                request.primaryType(),
                 request.primaryTypeName(),
-                request.collectionTypes(),
                 request.skinTreatmentConfidence(),
                 request.skinTreatmentSignals());
         return PlaceResponse.from(place);

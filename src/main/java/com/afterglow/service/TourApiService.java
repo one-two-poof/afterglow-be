@@ -2,14 +2,21 @@ package com.afterglow.service;
 
 import com.afterglow.tourapi.TourApiClient;
 import com.afterglow.tourapi.TourApiClient.TourApiException;
+import com.afterglow.tourapi.TourApiLanguageClient;
 import com.afterglow.web.dto.TourApiListItem;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TourApiService {
+
+    private static final Logger log = LoggerFactory.getLogger(TourApiService.class);
 
     private static final String SEOUL_AREA_CODE = "1";
     // areaCode2(areaCode=1) 조회로 확인한 서울 구 코드 — 강남구=1, 서초구=15
@@ -17,9 +24,11 @@ public class TourApiService {
     private static final int FETCH_ALL_ROWS = 500;
 
     private final TourApiClient client;
+    private final TourApiLanguageClient languageClient;
 
-    public TourApiService(TourApiClient client) {
+    public TourApiService(TourApiClient client, TourApiLanguageClient languageClient) {
         this.client = client;
+        this.languageClient = languageClient;
     }
 
     /** 강남구/서초구의 특정 contentTypeId(예: 32=숙박) 목록 전체 (페이징 없음) — 동기화 작업 전용 */
@@ -34,6 +43,34 @@ public class TourApiService {
             }
         }
         return items;
+    }
+
+    /**
+     * place_translations 백필 전용 — 강남구/서초구의 특정 contentTypeId 목록을 지정 언어(locale: "ja"/"en")로
+     * 조회해 contentId → title 맵으로 반환한다. 실패해도 동기화 본 작업(한글 목록 처리)을 막지 않도록
+     * 예외를 던지지 않고 빈 맵을 반환한다.
+     */
+    public Map<String, String> titleByContentId(int contentTypeId, String locale) {
+        Map<String, String> result = new HashMap<>();
+        try {
+            for (String sigunguCode : GANGNAM_SEOCHO_SIGUNGU_CODES) {
+                JsonNode root = languageClient.fetchAreaBasedList(
+                        locale, contentTypeId, SEOUL_AREA_CODE, sigunguCode, 1, FETCH_ALL_ROWS);
+                if (root == null) {
+                    continue;
+                }
+                verifyHeader(root);
+                for (JsonNode itemNode : itemArray(root.path("response").path("body"))) {
+                    TourApiListItem item = TourApiListItem.from(itemNode);
+                    if (!item.contentId().isBlank() && !item.title().isBlank()) {
+                        result.put(item.contentId(), item.title());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("TourAPI {} 번역 목록 조회 실패: contentTypeId={}, error={}", locale, contentTypeId, e.getMessage());
+        }
+        return result;
     }
 
     private void verifyHeader(JsonNode root) {

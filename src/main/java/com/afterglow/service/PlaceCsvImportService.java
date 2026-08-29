@@ -102,11 +102,8 @@ public class PlaceCsvImportService {
                         kakaoPlaceId,
                         row.get("placeName"),
                         row.get("categoryName"),
-                        row.get("categoryGroupCode"),
-                        row.get("categoryGroupName"),
                         row.get("phone"),
                         row.get("addressName"),
-                        row.get("roadAddressName"),
                         row.get("placeUrl"),
                         mapX,
                         mapY,
@@ -163,11 +160,8 @@ public class PlaceCsvImportService {
                         kakaoPlaceId,
                         row.get("placeName"),
                         row.get("categoryName"),
-                        row.get("categoryGroupCode"),
-                        row.get("categoryGroupName"),
                         row.get("phone"),
                         row.get("addressName"),
-                        row.get("roadAddressName"),
                         row.get("placeUrl"),
                         mapX,
                         mapY,
@@ -186,9 +180,7 @@ public class PlaceCsvImportService {
 
     private static void applyHospitalAccommodationMlTags(HospitalAccommodation place, Map<String, String> row) {
         place.applyMlTags(
-                row.get("primaryType"),
                 row.get("primaryTypeName"),
-                row.get("collectionTypes"),
                 row.get("skinTreatmentConfidence"),
                 row.get("skinTreatmentSignals"));
     }
@@ -199,14 +191,11 @@ public class PlaceCsvImportService {
      */
     private static void applyAttractionMlTags(Attraction attraction, Map<String, String> row) {
         attraction.applyMlTags(
-                row.get("primaryType"),
                 row.get("primaryTypeName"),
-                row.get("collectionTypes"),
                 parseBooleanOrNull(row.get("isIndoor")),
                 parseBooleanOrNull(row.get("isHeatSource")),
                 parseBooleanOrNull(row.get("isMassageSpot")),
-                parseIntOrNull(row.get("walkHard")),
-                parseBooleanOrNull(row.get("isNa")));
+                parseIntOrNull(row.get("walkHard")));
     }
 
     private static File openOrThrow(Path csvPath) {
