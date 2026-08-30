@@ -283,9 +283,25 @@ public class AttractionSyncService {
             Attraction existing = attractionRepository.findByPlaceId(place.id()).orElse(null);
             if (existing != null) {
                 merged++;
-                if (existing.getPrimaryTypeName() == null) {
-                    existing.applyMlTags(
+                // 오늘 카카오 검색으로 다시 확인된 데이터이므로 이름/주소/좌표/source를 최신으로 갱신한다
+                // (updateFromSync가 primaryTypeName은 write-once로 보호하므로 기존 분류는 안 건드림).
+                // CSV_IMPORT처럼 더 이상 살아있는 소스가 없던 행이 이렇게 자연스럽게 정리된다.
+                // 관리자가 직접 등록/수정한 행(MANUAL)만 예외로 보호한다.
+                if (!"MANUAL".equals(existing.getSource())) {
+                    existing.updateFromSync(
+                            place.placeName(),
+                            place.addressName(),
+                            place.mapX(),
+                            place.mapY(),
+                            null,
+                            place.phone(),
+                            place.placeUrl(),
                             c.primaryTypeName(),
+                            SOURCE_KAKAO_ONLY,
+                            syncedAt);
+                }
+                if (existing.getIsIndoor() == null) {
+                    existing.applyWalkConstraints(
                             c.walkDefaults().isIndoor(),
                             c.walkDefaults().isHeatSource(),
                             c.walkDefaults().isMassageSpot(),

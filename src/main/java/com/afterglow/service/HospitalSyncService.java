@@ -388,6 +388,21 @@ public class HospitalSyncService {
                 newlyCreated++;
             } else {
                 merged++;
+                // 오늘 카카오 검색으로 다시 확인된 데이터이므로 이름/주소/좌표/source를 최신으로 갱신한다.
+                // CSV_IMPORT처럼 더 이상 살아있는 소스가 없던 행이 이렇게 자연스럽게 정리된다.
+                // 관리자가 직접 등록/수정한 행(MANUAL)만 예외로 보호한다.
+                if (!"MANUAL".equals(place.getSource())) {
+                    place.updateFromSync(
+                            candidate.place().placeName(),
+                            candidate.place().addressName(),
+                            candidate.place().mapX(),
+                            candidate.place().mapY(),
+                            null,
+                            candidate.place().phone(),
+                            candidate.place().placeUrl(),
+                            SOURCE_KAKAO_ONLY,
+                            syncedAt);
+                }
             }
             place.applyMlTags(HOSPITAL_DISPLAY_NAME, confidence, String.join("|", signals));
         }
