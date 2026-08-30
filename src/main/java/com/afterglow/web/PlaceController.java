@@ -167,6 +167,8 @@ public class PlaceController {
             summary = "숙소 동기화 수동 트리거",
             description = "한국관광공사 TourAPI(KorService2, 숙박)와 카카오 로컬 API(AD5 숙박 카테고리)를 조합해 "
                     + "서울 전체 범위로 hospitals_accommodations 테이블의 ACCOMMODATION 행을 갱신한다. "
+                    + "추가로 TourAPI 목록과 무관하게 카카오 AD5 그룹코드로 서울 25개 구를 직접 스윕해 "
+                    + "TourAPI에 없는 숙소(게스트하우스 등)도 찾아 채운다. "
                     + "매일 새벽 4시 30분 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
     @PostMapping("/sync-accommodations")
     public AccommodationSyncService.SyncResult syncAccommodations() {

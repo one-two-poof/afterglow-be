@@ -4,10 +4,12 @@ import com.afterglow.domain.HospitalAccommodation;
 import com.afterglow.domain.PlaceType;
 import com.afterglow.kakao.KakaoPlace;
 import com.afterglow.kakao.KakaoPlaceClient;
+import com.afterglow.kakao.SeoulDistricts;
 import com.afterglow.repository.HospitalAccommodationRepository;
 import com.afterglow.web.dto.TourApiListItem;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +24,15 @@ import org.springframework.util.StringUtils;
  * 숙박 카테고리)와 매칭해 {@link HospitalAccommodation} 테이블의 ACCOMMODATION 행을 채운다.
  * {@link HospitalSyncService}의 관광공사+카카오 매칭 단계와 같은 패턴 — 매칭되면 기존 카카오 기반
  * 행을 그대로 찾아 갱신하므로 같은 숙소가 중복 생성되지 않는다.
+ *
+ * <p>2단계로 나뉜다.
+ * <ol>
+ *   <li>1단계: TourAPI 목록 항목의 이름으로 카카오를 검색해 매칭 시도(기존 로직).</li>
+ *   <li>2단계: TourAPI 목록과 무관하게 카카오 AD5(숙박) 그룹코드로 서울 25개 구를 통째로 스윕해서
+ *       TourAPI에 없는 숙소(게스트하우스·소규모 모텔 등)도 찾는다. 이미 존재하는 행이면(같은
+ *       kakaoPlaceId) 이름·주소·좌표·source를 최신으로 갱신하고, 없으면 source=KAKAO로 새로 만든다
+ *       — {@link HospitalSyncService}/{@link AttractionSyncService}의 카카오 재발견 갱신과 같은 패턴.</li>
+ * </ol>
  */
 @Service
 public class AccommodationSyncService {
@@ -31,6 +42,9 @@ public class AccommodationSyncService {
     private static final int ACCOMMODATION_CONTENT_TYPE_ID = 32;
     private static final String SOURCE_BOTH = "TOURISM_API+KAKAO";
     private static final String SOURCE_TOURISM_ONLY = "TOURISM_API";
+    private static final String SOURCE_KAKAO_ONLY = "KAKAO";
+    private static final String ACCOMMODATION_CATEGORY_GROUP_CODE = "AD5";
+    private static final String ACCOMMODATION_CATEGORY_PREFIX = "여행 > 숙박";
 
     private final TourApiService tourApiService;
     private final KakaoPlaceClient kakaoPlaceClient;
@@ -83,11 +97,77 @@ public class AccommodationSyncService {
             }
         }
 
-        log.info(
-                "숙소 동기화 완료: 관광공사={}건 (양쪽매칭={}, 관광공사단독={}, 좌표없음스킵={})",
-                items.size(), matchedBoth, tourismOnly, skippedNoCoords);
+        KakaoSweepResult kakaoSweep = collectKakaoAccommodations(syncedAt);
 
-        return new SyncResult(items.size(), matchedBoth, tourismOnly, skippedNoCoords, syncedAt);
+        log.info(
+                "숙소 동기화 완료: 관광공사={}건 (양쪽매칭={}, 관광공사단독={}, 좌표없음스킵={}) / 카카오 AD5 스윕: {}",
+                items.size(), matchedBoth, tourismOnly, skippedNoCoords, kakaoSweep);
+
+        return new SyncResult(items.size(), matchedBoth, tourismOnly, skippedNoCoords, kakaoSweep, syncedAt);
+    }
+
+    /**
+     * TourAPI 목록과 무관하게 카카오 AD5(숙박) 그룹코드로 서울 25개 구를 스윕한다. 구 이름만 쿼리로
+     * 넣고 그룹코드로 필터링(예: "강남구" + AD5) — {@link AttractionSyncService}가 CE7/CT1/AT4를
+     * 스윕하는 것과 같은 방식이다. AD5엔 "여행 > 숙박" 경로가 아닌 게 섞여 나올 수 있어 categoryName
+     * 접두어로 한 번 더 거른다.
+     */
+    private KakaoSweepResult collectKakaoAccommodations(Instant syncedAt) {
+        Map<String, KakaoPlace> discovered = new LinkedHashMap<>();
+        for (SeoulDistricts.Center district : SeoulDistricts.ALL) {
+            List<KakaoPlace> found;
+            try {
+                found = kakaoPlaceClient.searchKeywordAll(district.name(), ACCOMMODATION_CATEGORY_GROUP_CODE);
+            } catch (Exception e) {
+                log.warn("카카오 숙박 스윕 실패: district={}, error={}", district.name(), e.getMessage());
+                continue;
+            }
+            for (KakaoPlace place : found) {
+                if (place.categoryName() != null && place.categoryName().startsWith(ACCOMMODATION_CATEGORY_PREFIX)) {
+                    discovered.putIfAbsent(place.id(), place);
+                }
+            }
+        }
+
+        int newlyCreated = 0;
+        int merged = 0;
+        for (KakaoPlace place : discovered.values()) {
+            HospitalAccommodation existing = hospitalAccommodationRepository.findByPlaceId(place.id()).orElse(null);
+            if (existing == null) {
+                hospitalAccommodationRepository.save(new HospitalAccommodation(
+                        place.id(),
+                        null,
+                        place.placeName(),
+                        place.categoryGroupName(),
+                        place.addressName(),
+                        place.mapX(),
+                        place.mapY(),
+                        null,
+                        place.phone(),
+                        place.placeUrl(),
+                        PlaceType.ACCOMMODATION,
+                        SOURCE_KAKAO_ONLY,
+                        syncedAt));
+                newlyCreated++;
+            } else {
+                merged++;
+                // 오늘 카카오 검색으로 다시 확인된 데이터이므로 이름/주소/좌표/source를 최신으로 갱신한다.
+                // 관리자가 직접 등록/수정한 행(MANUAL)만 예외로 보호한다.
+                if (!"MANUAL".equals(existing.getSource())) {
+                    existing.updateFromSync(
+                            place.placeName(),
+                            place.addressName(),
+                            place.mapX(),
+                            place.mapY(),
+                            null,
+                            place.phone(),
+                            place.placeUrl(),
+                            SOURCE_KAKAO_ONLY,
+                            syncedAt);
+                }
+            }
+        }
+        return new KakaoSweepResult(discovered.size(), newlyCreated, merged);
     }
 
     /** contentId가 이번 목록에 있으면 TourAPI 공식 번역을 적용한다(자리만 만들고, 없으면 백필 스케줄러가 나중에 채움). */
@@ -211,11 +291,15 @@ public class AccommodationSyncService {
         return title;
     }
 
+    public record KakaoSweepResult(int discovered, int newlyCreated, int merged) {
+    }
+
     public record SyncResult(
             int tourismFetched,
             int matchedBoth,
             int tourismOnly,
             int skippedNoCoords,
+            KakaoSweepResult kakaoSweep,
             Instant syncedAt) {
     }
 }
