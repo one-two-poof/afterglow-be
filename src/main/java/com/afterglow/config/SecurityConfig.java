@@ -10,6 +10,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -63,8 +64,6 @@ public class SecurityConfig {
                     "/",
                     "/index.html",
                     "/api/route",
-                    // buildings.pmtiles를 정적 리소스로 서빙 (static/data/buildings.pmtiles)
-                    "/data/**",
                     // 장소 관리 페이지 (정적 리소스 자체는 공개, 안의 쓰기 API 호출은 JWT로 인증)
                     "/admin/**"
                 ).permitAll()
@@ -92,6 +91,15 @@ public class SecurityConfig {
                 headers.frameOptions(frame -> frame.sameOrigin()));
 
         return http.build();
+    }
+
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        // buildings.pmtiles(static/data/buildings.pmtiles) 등 정적 리소스는 시큐리티 필터 체인을
+        // 아예 타지 않게 한다. permitAll()만으로는 HeaderWriterFilter가 여전히 적용돼
+        // Cache-Control: no-store가 강제로 붙어 브라우저 캐싱이 안 됐음 (탐지: 프론트 요청이
+        // 매번 재다운로드됨).
+        return web -> web.ignoring().requestMatchers("/data/**");
     }
 
     @Bean
