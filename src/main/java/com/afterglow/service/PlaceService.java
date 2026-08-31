@@ -8,6 +8,7 @@ import com.afterglow.repository.AttractionRepository;
 import com.afterglow.repository.HospitalAccommodationRepository;
 import com.afterglow.web.dto.PlaceRequest;
 import com.afterglow.web.dto.PlaceResponse;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -40,13 +41,13 @@ public class PlaceService {
         this.placeTranslationService = placeTranslationService;
     }
 
-    public List<PlaceResponse> listAll(String name, String lang) {
-        List<HospitalAccommodation> hospitalsAccommodations = StringUtils.hasText(name)
-                ? hospitalAccommodationRepository.findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(name.trim())
-                : hospitalAccommodationRepository.findAllByOrderByPlaceNameAsc();
-        List<Attraction> attractions = StringUtils.hasText(name)
-                ? attractionRepository.findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(name.trim())
-                : attractionRepository.findAllByOrderByPlaceNameAsc();
+    public List<PlaceResponse> listAll(
+            String name, String lang, BigDecimal swLat, BigDecimal neLat, BigDecimal swLng, BigDecimal neLng) {
+        validateBounds(swLat, neLat, swLng, neLng);
+        String query = StringUtils.hasText(name) ? name.trim() : null;
+        List<HospitalAccommodation> hospitalsAccommodations =
+                hospitalAccommodationRepository.search(null, query, swLat, neLat, swLng, neLng);
+        List<Attraction> attractions = attractionRepository.search(query, swLat, neLat, swLng, neLng);
 
         List<PlaceResponse> combined = new ArrayList<>(hospitalsAccommodations.size() + attractions.size());
         hospitalsAccommodations.stream().map(PlaceResponse::from).forEach(combined::add);
@@ -55,18 +56,28 @@ public class PlaceService {
         return applyLocale(combined, lang);
     }
 
-    public List<PlaceResponse> listByType(PlaceType placeType, String name, String lang) {
+    public List<PlaceResponse> listByType(
+            PlaceType placeType, String name, String lang,
+            BigDecimal swLat, BigDecimal neLat, BigDecimal swLng, BigDecimal neLng) {
+        validateBounds(swLat, neLat, swLng, neLng);
+        String query = StringUtils.hasText(name) ? name.trim() : null;
         if (placeType == PlaceType.ATTRACTION) {
-            List<Attraction> attractions = StringUtils.hasText(name)
-                    ? attractionRepository.findByPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(name.trim())
-                    : attractionRepository.findAllByOrderByPlaceNameAsc();
+            List<Attraction> attractions = attractionRepository.search(query, swLat, neLat, swLng, neLng);
             return applyLocale(attractions.stream().map(PlaceResponse::from).toList(), lang);
         }
-        List<HospitalAccommodation> places = StringUtils.hasText(name)
-                ? hospitalAccommodationRepository.findByPlaceTypeAndPlaceNameContainingIgnoreCaseOrderByPlaceNameAsc(
-                        placeType, name.trim())
-                : hospitalAccommodationRepository.findByPlaceTypeOrderByPlaceNameAsc(placeType);
+        List<HospitalAccommodation> places =
+                hospitalAccommodationRepository.search(placeType, query, swLat, neLat, swLng, neLng);
         return applyLocale(places.stream().map(PlaceResponse::from).toList(), lang);
+    }
+
+    /** swLat/neLat/swLng/neLng는 넷 다 같이 오거나 전부 생략해야 한다 — 일부만 오면 뷰포트를 정할 수 없다. */
+    private static void validateBounds(BigDecimal swLat, BigDecimal neLat, BigDecimal swLng, BigDecimal neLng) {
+        boolean anyPresent = swLat != null || neLat != null || swLng != null || neLng != null;
+        boolean allPresent = swLat != null && neLat != null && swLng != null && neLng != null;
+        if (anyPresent && !allPresent) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "뷰포트 좌표(swLat/neLat/swLng/neLng)는 넷 다 같이 주거나 전부 생략해야 합니다.");
+        }
     }
 
     public PlaceResponse getOne(Long id, PlaceType placeType, String lang) {

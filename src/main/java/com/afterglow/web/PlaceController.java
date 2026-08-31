@@ -13,6 +13,7 @@ import com.afterglow.web.dto.PlaceResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,9 @@ public class PlaceController {
     private static final String LANG_DESCRIPTION =
             "응답 언어. 'ja' 또는 'en'만 지원하며, 생략하거나 다른 값을 주면 한국어 원본을 그대로 반환한다. "
                     + "place_translations에 아직 번역이 없는 필드는 한국어 원본으로 폴백한다. 주소는 로케일과 무관하게 항상 한국어 원본.";
+    private static final String BBOX_DESCRIPTION =
+            "지도 뷰포트(현재 화면에 보이는 영역)로 결과를 제한한다. swLat/neLat/swLng/neLng 넷 다 같이 주거나 "
+                    + "전부 생략해야 하며(일부만 주면 400), 생략 시 필터 없이 전체를 반환한다.";
 
     private final PlaceService placeService;
     private final HospitalSyncService hospitalSyncService;
@@ -65,8 +69,12 @@ public class PlaceController {
             @Parameter(description = "장소명 부분 검색어 (생략 시 전체 목록)")
             @RequestParam(required = false) String name,
             @Parameter(description = LANG_DESCRIPTION)
-            @RequestParam(required = false) String lang) {
-        return placeService.listAll(name, lang);
+            @RequestParam(required = false) String lang,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLng,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLng) {
+        return placeService.listAll(name, lang, swLat, neLat, swLng, neLng);
     }
 
     @Operation(
@@ -91,8 +99,12 @@ public class PlaceController {
             @Parameter(description = "장소명 부분 검색어 (생략 시 병원 전체)")
             @RequestParam(required = false) String name,
             @Parameter(description = LANG_DESCRIPTION)
-            @RequestParam(required = false) String lang) {
-        return placeService.listByType(PlaceType.HOSPITAL, name, lang);
+            @RequestParam(required = false) String lang,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLng,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLng) {
+        return placeService.listByType(PlaceType.HOSPITAL, name, lang, swLat, neLat, swLng, neLng);
     }
 
     @Operation(
@@ -103,8 +115,12 @@ public class PlaceController {
             @Parameter(description = "장소명 부분 검색어 (생략 시 숙소 전체)")
             @RequestParam(required = false) String name,
             @Parameter(description = LANG_DESCRIPTION)
-            @RequestParam(required = false) String lang) {
-        return placeService.listByType(PlaceType.ACCOMMODATION, name, lang);
+            @RequestParam(required = false) String lang,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLng,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLng) {
+        return placeService.listByType(PlaceType.ACCOMMODATION, name, lang, swLat, neLat, swLng, neLng);
     }
 
     @Operation(
@@ -115,8 +131,12 @@ public class PlaceController {
             @Parameter(description = "장소명 부분 검색어 (생략 시 관광명소 전체)")
             @RequestParam(required = false) String name,
             @Parameter(description = LANG_DESCRIPTION)
-            @RequestParam(required = false) String lang) {
-        return placeService.listByType(PlaceType.ATTRACTION, name, lang);
+            @RequestParam(required = false) String lang,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLat,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal swLng,
+            @Parameter(description = BBOX_DESCRIPTION) @RequestParam(required = false) BigDecimal neLng) {
+        return placeService.listByType(PlaceType.ATTRACTION, name, lang, swLat, neLat, swLng, neLng);
     }
 
     @Operation(
