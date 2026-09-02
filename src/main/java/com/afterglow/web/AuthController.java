@@ -2,6 +2,7 @@ package com.afterglow.web;
 
 import com.afterglow.domain.User;
 import com.afterglow.repository.UserRepository;
+import com.afterglow.service.UserAccountService;
 import com.afterglow.web.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -9,6 +10,7 @@ import java.net.URI;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,9 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final UserRepository userRepository;
+    private final UserAccountService userAccountService;
 
-    public AuthController(UserRepository userRepository) {
+    public AuthController(UserRepository userRepository, UserAccountService userAccountService) {
         this.userRepository = userRepository;
+        this.userAccountService = userAccountService;
     }
 
     @Operation(
@@ -44,5 +48,18 @@ public class AuthController {
         return userRepository.findById(Long.parseLong(userId))
                 .map(user -> ResponseEntity.ok(UserResponse.from(user)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @Operation(
+            summary = "회원 탈퇴",
+            description = "JWT로 인증된 사용자 본인의 계정과 연관된 모든 데이터(추천 이력, 선택 코스 등)를 "
+                    + "영구 삭제한다. 삭제 후 되돌릴 수 없다. JWT 필요.")
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteMe(@AuthenticationPrincipal String userId) {
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        userAccountService.deleteAccount(Long.parseLong(userId));
+        return ResponseEntity.noContent().build();
     }
 }

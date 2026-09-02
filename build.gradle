@@ -42,4 +42,7 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // ShadeGraph가 부팅 시 그늘길 그래프(edges.geojson 280MB 등)를 통째로 힙에 올려서,
+    // 전체 스프링 컨텍스트를 띄우는 테스트(@SpringBootTest)는 기본 힙으로는 OOM이 난다.
+    maxHeapSize = '2g'
 }
