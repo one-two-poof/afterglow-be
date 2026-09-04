@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -14,7 +15,8 @@ import java.time.Instant;
  * 관광공사 API로 들어온 적이 없는 카테고리라 tourism_content_id는 없다.
  */
 @Entity
-@Table(name = "attractions")
+@Table(name = "attractions",
+        indexes = @Index(name = "idx_attractions_map_y_map_x", columnList = "map_y, map_x"))
 public class Attraction {
 
     @Id

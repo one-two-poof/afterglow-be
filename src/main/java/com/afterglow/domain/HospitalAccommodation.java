@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,7 +17,8 @@ import java.time.Instant;
  * 피부시술 ML 태그(skin_treatment_*)는 병원 데이터에서만 채워지고 숙소는 항상 null.
  */
 @Entity
-@Table(name = "hospitals_accommodations")
+@Table(name = "hospitals_accommodations",
+        indexes = @Index(name = "idx_hospitals_accommodations_map_y_map_x", columnList = "map_y, map_x"))
 public class HospitalAccommodation {
 
     @Id

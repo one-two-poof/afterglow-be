@@ -11,7 +11,6 @@ import com.afterglow.web.dto.PlaceResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -52,7 +51,6 @@ public class PlaceService {
         List<PlaceResponse> combined = new ArrayList<>(hospitalsAccommodations.size() + attractions.size());
         hospitalsAccommodations.stream().map(PlaceResponse::from).forEach(combined::add);
         attractions.stream().map(PlaceResponse::from).forEach(combined::add);
-        combined.sort(Comparator.comparing(PlaceResponse::placeName));
         return applyLocale(combined, lang);
     }
 
