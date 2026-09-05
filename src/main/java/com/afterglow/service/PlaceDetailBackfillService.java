@@ -119,6 +119,10 @@ public class PlaceDetailBackfillService {
                 log.warn(
                         "숙소 상세정보 백필 실패: placeId={}, contentId={}, error={}",
                         place.getId(), place.getTourismContentId(), e.getMessage());
+                if (isDailyQuotaExceeded(e)) {
+                    log.warn("TourAPI 일일 요청 한도 초과 — 숙소 백필을 중단하고 다음 배치(내일)로 미룹니다.");
+                    break;
+                }
             }
         }
         return filled;
@@ -146,9 +150,24 @@ public class PlaceDetailBackfillService {
                 log.warn(
                         "관광명소 상세정보 백필 실패: placeId={}, contentId={}, error={}",
                         attraction.getId(), attraction.getTourismContentId(), e.getMessage());
+                if (isDailyQuotaExceeded(e)) {
+                    log.warn("TourAPI 일일 요청 한도 초과 — 관광명소 백필을 중단하고 다음 배치(내일)로 미룹니다.");
+                    break;
+                }
             }
         }
         return filled;
+    }
+
+    /**
+     * data.go.kr는 일일 호출 한도를 넘기면 개별 콘텐츠 존재 여부와 무관하게 모든 요청이 이 에러로
+     * 실패한다 — 이 상태에서 남은 후보를 계속 호출해봐야 전부 똑같이 실패하므로(불필요한 API 호출 +
+     * 로그 스팸) 감지되면 그 타입의 백필을 즉시 중단한다. 한도는 보통 자정에 초기화되므로 다음날
+     * 스케줄러 실행 때 남은 후보부터 이어서 처리된다.
+     */
+    private boolean isDailyQuotaExceeded(Exception e) {
+        String message = e.getMessage();
+        return message != null && message.contains("LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR");
     }
 
     private Set<Long> alreadyFilled(PlaceType placeType, List<Long> placeIds) {
