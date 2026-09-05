@@ -23,7 +23,7 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
      * 지도 마커 조회용이라 정렬은 하지 않는다 — 이름순 정렬은 마커 표시에 의미가 없고 정렬 비용만 붙는다.
      */
     @Query("SELECT a FROM Attraction a WHERE "
-            + "(:name IS NULL OR LOWER(a.placeName) LIKE LOWER(CONCAT('%', :name, '%'))) AND "
+            + "(:name IS NULL OR LOWER(a.placeName) LIKE LOWER(CONCAT('%', CAST(:name AS string), '%'))) AND "
             + "(:swLat IS NULL OR (a.mapY BETWEEN :swLat AND :neLat AND a.mapX BETWEEN :swLng AND :neLng))")
     List<Attraction> search(
             @Param("name") String name,

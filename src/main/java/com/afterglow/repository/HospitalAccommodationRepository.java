@@ -25,7 +25,7 @@ public interface HospitalAccommodationRepository extends JpaRepository<HospitalA
      */
     @Query("SELECT h FROM HospitalAccommodation h WHERE "
             + "(:placeType IS NULL OR h.placeType = :placeType) AND "
-            + "(:name IS NULL OR LOWER(h.placeName) LIKE LOWER(CONCAT('%', :name, '%'))) AND "
+            + "(:name IS NULL OR LOWER(h.placeName) LIKE LOWER(CONCAT('%', CAST(:name AS string), '%'))) AND "
             + "(:swLat IS NULL OR (h.mapY BETWEEN :swLat AND :neLat AND h.mapX BETWEEN :swLng AND :neLng))")
     List<HospitalAccommodation> search(
             @Param("placeType") PlaceType placeType,
