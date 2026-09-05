@@ -6,6 +6,8 @@ import com.afterglow.domain.PlaceTranslation;
 import com.afterglow.domain.PlaceType;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import org.springframework.util.StringUtils;
 
 public record PlaceResponse(
@@ -31,7 +33,10 @@ public record PlaceResponse(
         Boolean isHeatSource,
         Boolean isMassageSpot,
         Integer walkHard,
-        Integer popularity) {
+        Integer popularity,
+        String overview,
+        List<String> images,
+        Map<String, String> extraInfo) {
 
     public static PlaceResponse from(HospitalAccommodation place) {
         return new PlaceResponse(
@@ -57,6 +62,9 @@ public record PlaceResponse(
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
     }
 
@@ -78,7 +86,24 @@ public record PlaceResponse(
                 base.image(), base.phone(), base.placeUrl(), base.source(), base.imageOverridden(), base.syncedAt(),
                 base.placeType(), base.primaryTypeName(),
                 base.skinTreatmentConfidence(), base.skinTreatmentSignals(), base.isIndoor(), base.isHeatSource(),
-                base.isMassageSpot(), base.walkHard(), base.popularity());
+                base.isMassageSpot(), base.walkHard(), base.popularity(),
+                base.overview(), base.images(), base.extraInfo());
+    }
+
+    /**
+     * place_details에 값이 있을 때만(tourism_content_id가 있는 행) overview/images/extraInfo를
+     * 얹는다. 목록 API(listAll/listByType)는 이 메서드를 호출하지 않아 항상 null 그대로 가볍게
+     * 유지된다 — 단건 조회(getOne)에서만 쓴다.
+     */
+    public static PlaceResponse withDetail(PlaceResponse base, String overview, List<String> images, Map<String, String> extraInfo) {
+        return new PlaceResponse(
+                base.id(), base.placeId(), base.tourismContentId(), base.placeName(), base.categoryName(),
+                base.addressName(), base.mapX(), base.mapY(),
+                base.image(), base.phone(), base.placeUrl(), base.source(), base.imageOverridden(), base.syncedAt(),
+                base.placeType(), base.primaryTypeName(),
+                base.skinTreatmentConfidence(), base.skinTreatmentSignals(), base.isIndoor(), base.isHeatSource(),
+                base.isMassageSpot(), base.walkHard(), base.popularity(),
+                overview, images, extraInfo);
     }
 
     public static PlaceResponse from(Attraction place) {
@@ -105,6 +130,9 @@ public record PlaceResponse(
                 place.getIsHeatSource(),
                 place.getIsMassageSpot(),
                 place.getWalkHard(),
-                place.getPopularity());
+                place.getPopularity(),
+                null,
+                null,
+                null);
     }
 }

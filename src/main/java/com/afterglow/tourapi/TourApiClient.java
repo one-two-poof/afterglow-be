@@ -48,6 +48,93 @@ public class TourApiClient {
     }
 
     /**
+     * 공통 상세정보 조회 (detailCommon2). overview(소개글)를 포함한 공통 필드를 준다 —
+     * contentTypeId와 무관하게 항상 같은 형태라 관광명소(12/14/38 어느 쪽인지 몰라도) 호출 가능.
+     */
+    public JsonNode fetchDetailCommon2(String contentId) {
+        requireConfigured();
+
+        String raw = tourApiWebClient.get()
+                .uri(builder -> builder
+                        .path("/detailCommon2")
+                        .queryParam("serviceKey", properties.serviceKey())
+                        .queryParam("numOfRows", 1)
+                        .queryParam("pageNo", 1)
+                        .queryParam("MobileOS", "ETC")
+                        .queryParam("MobileApp", properties.mobileApp())
+                        .queryParam("contentId", contentId)
+                        .queryParam("defaultYN", "Y")
+                        .queryParam("overviewYN", "Y")
+                        .queryParam("firstImageYN", "N")
+                        .queryParam("areacodeYN", "N")
+                        .queryParam("catcodeYN", "N")
+                        .queryParam("addrinfoYN", "N")
+                        .queryParam("mapinfoYN", "N")
+                        .queryParam("_type", "json")
+                        .build())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, this::mapError)
+                .bodyToMono(String.class)
+                .block();
+
+        return parse(raw);
+    }
+
+    /**
+     * 소개정보 조회 (detailIntro2). 체크인/체크아웃, 이용시간, 주차 등 타입별 운영정보를 주는데,
+     * contentTypeId별로 응답 필드셋이 완전히 다르므로 호출 시 반드시 알고 있어야 한다
+     * (숙소=32 고정이라 문제 없음, 관광명소는 12/14/38 중 어느 것인지 DB에 없어서 이 메서드를 못 씀 —
+     * docs/place-detail-info-plan.md 0절 참고).
+     */
+    public JsonNode fetchDetailIntro2(String contentId, int contentTypeId) {
+        requireConfigured();
+
+        String raw = tourApiWebClient.get()
+                .uri(builder -> builder
+                        .path("/detailIntro2")
+                        .queryParam("serviceKey", properties.serviceKey())
+                        .queryParam("numOfRows", 1)
+                        .queryParam("pageNo", 1)
+                        .queryParam("MobileOS", "ETC")
+                        .queryParam("MobileApp", properties.mobileApp())
+                        .queryParam("contentId", contentId)
+                        .queryParam("contentTypeId", contentTypeId)
+                        .queryParam("_type", "json")
+                        .build())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, this::mapError)
+                .bodyToMono(String.class)
+                .block();
+
+        return parse(raw);
+    }
+
+    /** 이미지 목록 조회 (detailImage2). contentTypeId와 무관하게 contentId만으로 조회된다. */
+    public JsonNode fetchDetailImage2(String contentId) {
+        requireConfigured();
+
+        String raw = tourApiWebClient.get()
+                .uri(builder -> builder
+                        .path("/detailImage2")
+                        .queryParam("serviceKey", properties.serviceKey())
+                        .queryParam("numOfRows", 20)
+                        .queryParam("pageNo", 1)
+                        .queryParam("MobileOS", "ETC")
+                        .queryParam("MobileApp", properties.mobileApp())
+                        .queryParam("contentId", contentId)
+                        .queryParam("imageYN", "Y")
+                        .queryParam("subImageYN", "Y")
+                        .queryParam("_type", "json")
+                        .build())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, this::mapError)
+                .bodyToMono(String.class)
+                .block();
+
+        return parse(raw);
+    }
+
+    /**
      * 분류체계 코드 조회 (categoryCode2). cat1 없이 호출하면 대분류 전체, cat1만 주면 그 아래 중분류
      * 전체, cat1+cat2를 주면 그 아래 소분류 전체를 반환한다.
      */

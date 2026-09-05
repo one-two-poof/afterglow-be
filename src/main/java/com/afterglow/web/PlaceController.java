@@ -5,6 +5,7 @@ import com.afterglow.service.AccommodationSyncService;
 import com.afterglow.service.AttractionSyncService;
 import com.afterglow.service.HospitalSyncService;
 import com.afterglow.service.HospitalSyncService.SyncResult;
+import com.afterglow.service.PlaceDetailBackfillService;
 import com.afterglow.service.PlaceService;
 import com.afterglow.service.PlaceTranslationBackfillService;
 import com.afterglow.service.PlaceTranslationBackfillService.BackfillResult;
@@ -45,18 +46,21 @@ public class PlaceController {
     private final AccommodationSyncService accommodationSyncService;
     private final AttractionSyncService attractionSyncService;
     private final PlaceTranslationBackfillService placeTranslationBackfillService;
+    private final PlaceDetailBackfillService placeDetailBackfillService;
 
     public PlaceController(
             PlaceService placeService,
             HospitalSyncService hospitalSyncService,
             AccommodationSyncService accommodationSyncService,
             AttractionSyncService attractionSyncService,
-            PlaceTranslationBackfillService placeTranslationBackfillService) {
+            PlaceTranslationBackfillService placeTranslationBackfillService,
+            PlaceDetailBackfillService placeDetailBackfillService) {
         this.placeService = placeService;
         this.hospitalSyncService = hospitalSyncService;
         this.accommodationSyncService = accommodationSyncService;
         this.attractionSyncService = attractionSyncService;
         this.placeTranslationBackfillService = placeTranslationBackfillService;
+        this.placeDetailBackfillService = placeDetailBackfillService;
     }
 
     @Operation(
@@ -80,7 +84,10 @@ public class PlaceController {
     @Operation(
             summary = "장소 단건 조회",
             description = "id와 placeType으로 장소 1건을 조회한다. id는 hospitals_accommodations/attractions 두 테이블에서 "
-                    + "각자 독립적으로 채번되므로 placeType 없이는 어느 테이블 행인지 알 수 없다. 인증 불필요.")
+                    + "각자 독립적으로 채번되므로 placeType 없이는 어느 테이블 행인지 알 수 없다. "
+                    + "tourism_content_id가 있는 행(TourAPI/의료관광 API로 매칭된 행)이면 overview/images/extraInfo에 "
+                    + "소개글·이미지·운영정보가 채워진다(place_details 백필 완료 전이거나 카카오 단독 소스 행이면 셋 다 null). "
+                    + "목록 조회(listPlaces 등)엔 이 필드들이 포함되지 않는다. 인증 불필요.")
     @GetMapping("/{id}")
     public PlaceResponse getPlace(
             @PathVariable Long id,
@@ -214,5 +221,16 @@ public class PlaceController {
     @PostMapping("/backfill-translations")
     public BackfillResult backfillTranslations() {
         return placeTranslationBackfillService.backfill();
+    }
+
+    @Operation(
+            summary = "장소 상세정보(overview/images/extraInfo) 백필 수동 트리거 (관리자)",
+            description = "tourism_content_id가 있는 행(병원은 의료관광 API, 숙소·관광명소는 TourAPI로 매칭된 행)의 "
+                    + "소개글/이미지/운영정보를 place_details에 채운다. 관광명소는 contentTypeId를 DB에 저장하지 않아 "
+                    + "운영정보(extraInfo)는 항상 비고 소개글/이미지만 채워진다(docs/place-detail-info-plan.md 참고). "
+                    + "매일 새벽 5시 자동 실행되는 것과 같은 로직을 즉시 실행. JWT 필요.")
+    @PostMapping("/backfill-details")
+    public PlaceDetailBackfillService.BackfillResult backfillDetails() {
+        return placeDetailBackfillService.backfill();
     }
 }

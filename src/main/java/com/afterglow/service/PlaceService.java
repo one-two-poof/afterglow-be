@@ -30,14 +30,17 @@ public class PlaceService {
     private final HospitalAccommodationRepository hospitalAccommodationRepository;
     private final AttractionRepository attractionRepository;
     private final PlaceTranslationService placeTranslationService;
+    private final PlaceDetailService placeDetailService;
 
     public PlaceService(
             HospitalAccommodationRepository hospitalAccommodationRepository,
             AttractionRepository attractionRepository,
-            PlaceTranslationService placeTranslationService) {
+            PlaceTranslationService placeTranslationService,
+            PlaceDetailService placeDetailService) {
         this.hospitalAccommodationRepository = hospitalAccommodationRepository;
         this.attractionRepository = attractionRepository;
         this.placeTranslationService = placeTranslationService;
+        this.placeDetailService = placeDetailService;
     }
 
     public List<PlaceResponse> listAll(
@@ -82,6 +85,7 @@ public class PlaceService {
         PlaceResponse response = placeType == PlaceType.ATTRACTION
                 ? PlaceResponse.from(findAttractionOrThrow(id))
                 : PlaceResponse.from(findHospitalAccommodationOrThrow(id));
+        response = applyDetail(response, placeType, id);
         String locale = PlaceTranslationService.normalizeLocale(lang);
         if (locale == null) {
             return response;
@@ -90,6 +94,21 @@ public class PlaceService {
                 .findByPlacesAndLocale(List.of(placeType), List.of(id), locale)
                 .get(PlaceTranslationService.key(placeType, id));
         return PlaceResponse.withLocaleOverride(response, translation);
+    }
+
+    /**
+     * tourism_content_id가 있는 행만 place_details에 값이 있을 수 있다 — 카카오 단독 소스 행은
+     * 항상 빈 Optional이라 base 그대로 반환된다(오류가 아니라 정상적인 "상세정보 없음" 케이스).
+     * 목록 API(listAll/listByType)는 이 조회를 하지 않는다 — 단건 조회에서만 얹는다.
+     */
+    private PlaceResponse applyDetail(PlaceResponse base, PlaceType placeType, Long id) {
+        return placeDetailService.find(placeType, id)
+                .map(detail -> PlaceResponse.withDetail(
+                        base,
+                        detail.getOverview(),
+                        placeDetailService.readImages(detail.getImages()),
+                        placeDetailService.readExtraInfo(detail.getExtraInfo())))
+                .orElse(base);
     }
 
     /** 배치 1건으로 번역을 조회해 얹는다(건별 조회 시 N+1이 되므로). lang이 지원 로케일이 아니면 원본 그대로. */

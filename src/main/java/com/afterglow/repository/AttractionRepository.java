@@ -14,6 +14,9 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
 
     Optional<Attraction> findByTourismContentId(String tourismContentId);
 
+    /** place_details 백필 대상 후보 조회 — tourism_content_id가 있는 행만 상세 API를 부를 수 있다. */
+    List<Attraction> findByTourismContentIdIsNotNull();
+
     /**
      * name/뷰포트(bbox) 필터 모두 선택적이다 — 값이 null인 필터는 조건에서 빠진다.
      * bbox는 네 값(swLat/neLat/swLng/neLng)이 항상 같이 오거나 같이 null이어야 한다(호출부에서 보장).
