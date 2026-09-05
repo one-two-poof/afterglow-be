@@ -50,6 +50,19 @@ public class PlaceDetailService {
                 .orElseGet(() -> repository.save(new PlaceDetail(placeType, placeId)));
     }
 
+    /**
+     * 관광명소 전용 — {@link AttractionSyncService}가 동기화 중 이미 알고 있는 TourAPI
+     * contentTypeId(12/14/38)를 그대로 적어둔다(추가 API 호출 없음). 이 값이 있어야 백필 때
+     * detailIntro2(운영정보)를 부를 수 있다. write-once라 이미 값이 있으면 아무것도 안 함.
+     */
+    @Transactional
+    public void recordContentTypeId(PlaceType placeType, Long placeId, Integer contentTypeId) {
+        if (contentTypeId == null) {
+            return;
+        }
+        getOrCreate(placeType, placeId).applyContentTypeId(contentTypeId);
+    }
+
     public Optional<PlaceDetail> find(PlaceType placeType, Long placeId) {
         return repository.findByPlaceTypeAndPlaceId(placeType, placeId);
     }

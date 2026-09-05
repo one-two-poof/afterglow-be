@@ -65,6 +65,7 @@ public class AttractionSyncService {
     private final AttractionClassifier attractionClassifier;
     private final AttractionRepository attractionRepository;
     private final PlaceTranslationService placeTranslationService;
+    private final PlaceDetailService placeDetailService;
 
     public AttractionSyncService(
             TourApiService tourApiService,
@@ -73,7 +74,8 @@ public class AttractionSyncService {
             KakaoRatingClient kakaoRatingClient,
             AttractionClassifier attractionClassifier,
             AttractionRepository attractionRepository,
-            PlaceTranslationService placeTranslationService) {
+            PlaceTranslationService placeTranslationService,
+            PlaceDetailService placeDetailService) {
         this.tourApiService = tourApiService;
         this.tourApiCategoryService = tourApiCategoryService;
         this.kakaoPlaceClient = kakaoPlaceClient;
@@ -81,6 +83,7 @@ public class AttractionSyncService {
         this.attractionClassifier = attractionClassifier;
         this.attractionRepository = attractionRepository;
         this.placeTranslationService = placeTranslationService;
+        this.placeDetailService = placeDetailService;
     }
 
     @Transactional
@@ -187,6 +190,7 @@ public class AttractionSyncService {
         applyWalkConstraintsIfMissing(attraction, category);
         attraction = attractionRepository.save(attraction);
         applyTourApiTranslations(attraction.getId(), item.contentId(), jaTitles, enTitles);
+        placeDetailService.recordContentTypeId(PlaceType.ATTRACTION, attraction.getId(), category.contentTypeId());
     }
 
     /** 카카오 매칭 실패/불가 — 관광공사 원본만으로 저장. 좌표가 없으면 스킵하고 false를 반환한다. */
@@ -238,6 +242,7 @@ public class AttractionSyncService {
         applyWalkConstraintsIfMissing(attraction, category);
         attraction = attractionRepository.save(attraction);
         applyTourApiTranslations(attraction.getId(), item.contentId(), jaTitles, enTitles);
+        placeDetailService.recordContentTypeId(PlaceType.ATTRACTION, attraction.getId(), category.contentTypeId());
         return true;
     }
 

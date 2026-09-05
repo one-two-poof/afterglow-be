@@ -58,6 +58,16 @@ public class PlaceDetail {
     @Column(length = 32)
     private String source;
 
+    /**
+     * TourAPI contentTypeId(12=관광지/14=문화시설/38=쇼핑). 관광명소 전용 — {@link Attraction}엔
+     * 이 값이 저장되지 않아서(테이블을 안 건드리기로 했음) 여기에 대신 기록해둔다.
+     * {@link AttractionSyncService}가 동기화 중 이미 알고 있는 값을 그대로 적어두는 것뿐이라
+     * 추가 API 호출이 없다. 이 값이 있어야만 {@code detailIntro2}(운영정보)를 안전하게 부를 수 있다
+     * — 없으면(과거에 동기화된 뒤 아직 재동기화 안 된 행) overview/images만 받고 extraInfo는 비워둔다.
+     */
+    @Column(name = "content_type_id")
+    private Integer contentTypeId;
+
     /** 관리자가 손으로 고쳤으면 true — 이후 자동 백필이 이 행 전체를 건드리지 않는다. */
     @Column(nullable = false)
     private boolean overridden;
@@ -90,6 +100,14 @@ public class PlaceDetail {
         this.fetchedAt = fetchedAt;
     }
 
+    /** 최초 1회만 채워진다 — 이미 값이 있으면(재동기화로 또 불려도) 무시. 값 자체가 절대 안 바뀌는 속성이라 overridden과 무관하게 write-once만 지키면 된다. */
+    public void applyContentTypeId(Integer contentTypeId) {
+        if (this.contentTypeId != null || contentTypeId == null) {
+            return;
+        }
+        this.contentTypeId = contentTypeId;
+    }
+
     public Long getId() { return id; }
     public PlaceType getPlaceType() { return placeType; }
     public Long getPlaceId() { return placeId; }
@@ -99,4 +117,5 @@ public class PlaceDetail {
     public String getSource() { return source; }
     public boolean isOverridden() { return overridden; }
     public Instant getFetchedAt() { return fetchedAt; }
+    public Integer getContentTypeId() { return contentTypeId; }
 }

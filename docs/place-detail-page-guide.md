@@ -120,11 +120,20 @@ GET /api/places/{id}?placeType=HOSPITAL|ACCOMMODATION|ATTRACTION&lang=ja|en
     `cooperativeHospital`, `treatmentGoodsKind`
   - **숙소**: `checkinTime`, `checkoutTime`, `roomCount`, `subFacility`, `parking`, `cooking`,
     `pickup`, `reservationUrl`, `scale`
-  - **관광명소**: `extraInfo`가 **항상 `null`**이다 — `overview`/`images`만 온다. TourAPI 상세
-    조회(`detailIntro2`)가 `contentTypeId`(12/관광지·14/문화시설·38/쇼핑)를 요구하는데
-    `attractions` 테이블엔 이 값이 저장돼 있지 않아서 안전하게 못 부른다(`place-detail-info-plan.md`
-    0절 참고). `extraInfo` 자체가 없으니 프론트에서 이 키들을 참조하지 말고, 관광명소는 6절의
-    `primaryTypeName`/`walkHard`/`popularity` 등 기존 필드로만 운영정보를 대체 표현할 것.
+  - **관광명소** (2026-09-06부터 지원, contentTypeId를 아는 행만): TourAPI `contentTypeId`
+    (12=관광지/14=문화시설/38=쇼핑)에 따라 키 구성이 또 다르다.
+    - 12(관광지): `useTime`(이용시간), `restDate`(휴무일), `parking`, `babyCarriage`(유모차대여),
+      `pet`(반려동물동반), `expGuide`(체험안내), `infoCenter`(문의처)
+    - 14(문화시설): `useFee`(이용요금), `useTime`, `restDate`, `spendTime`(관람소요시간),
+      `discountInfo`, `parking`, `infoCenter`
+    - 38(쇼핑): `openTime`(영업시간), `restDate`, `saleItem`(판매품목), `parking`, `infoCenter`
+    - **"영업시간"에 해당하는 키는 유형별로 이름이 다르다** — 관광지/문화시설은 `useTime`, 쇼핑은
+      `openTime`. 프론트는 `primaryTypeName`으로 유형을 먼저 구분하고 그에 맞는 키를 읽어야 한다.
+    - `attractions` 테이블에 `contentTypeId`가 저장되지 않아서(기존 테이블 비변경 원칙), 이 값은
+      `place_details`에 별도로 기록된다 — `AttractionSyncService`가 동기화할 때마다 채워지는
+      write-once 값이라, **아직 한 번도 재동기화되지 않은 오래된 행은 이 값 자체가 없어서
+      `extraInfo`가 여전히 `null`일 수 있다**(overview/images는 정상적으로 채워짐). 매일 동기화가
+      계속 도니 시간이 지나면 자연스럽게 채워진다.
   - 응답에 없는 키는 원본 API에도 값이 없었다는 뜻(빈 문자열이 아니라 키 자체가 생략됨) — 프론트는
     각 키를 옵셔널로 취급.
 
@@ -153,8 +162,9 @@ GET /api/places/{id}?placeType=HOSPITAL|ACCOMMODATION|ATTRACTION&lang=ja|en
 - [ ] `overview`/`images`/`extraInfo` null → 상세 소개 섹션 통째로 숨김("정보 없음" 문구도 굳이
       안 넣는 게 낫다 — 카카오 단독 소스 행이면 앞으로도 절대 안 채워지고, 숙소/관광명소는 TourAPI
       일일 쿼터 때문에 당장은 null인 행이 많다 — 7절 참고)
-- [ ] 관광명소는 `extraInfo`가 항상 null → 이 필드의 키들(체크인/체크아웃 등)을 참조하는 코드
-      자체를 관광명소 상세 화면엔 넣지 말 것
+- [ ] 관광명소 `extraInfo`는 `contentTypeId`(12/14/38)별로 키가 다름 → `primaryTypeName`으로
+      유형을 먼저 구분해서 그에 맞는 키만 읽을 것(숙소의 `checkinTime` 같은 다른 타입 키를 참조
+      하지 말 것). 오래된 행은 재동기화 전까지 `extraInfo` 자체가 null일 수 있음
 - [ ] 관광명소 `popularity`/`isIndoor` 등 null → 해당 UI 블록 통째로 숨김(0/false로 오인 렌더링 금지)
 - [ ] `lang=ja`/`en`인데 번역 미존재 → 한국어 원본이 그대로 오므로 별도 처리 불필요, 다만 주소는
       항상 한국어라는 안내 문구 필요

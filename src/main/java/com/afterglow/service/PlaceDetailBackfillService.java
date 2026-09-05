@@ -11,7 +11,6 @@ import com.afterglow.web.dto.MedicalTourismDetail;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,11 +70,12 @@ public class PlaceDetailBackfillService {
     private int backfillHospitals() {
         List<HospitalAccommodation> candidates =
                 hospitalAccommodationRepository.findByPlaceTypeAndTourismContentIdIsNotNull(PlaceType.HOSPITAL);
-        Set<Long> done = alreadyFilled(PlaceType.HOSPITAL, candidates.stream().map(HospitalAccommodation::getId).toList());
+        Map<Long, PlaceDetail> existing =
+                existingDetails(PlaceType.HOSPITAL, candidates.stream().map(HospitalAccommodation::getId).toList());
 
         int filled = 0;
         for (HospitalAccommodation place : candidates) {
-            if (done.contains(place.getId())) {
+            if (isFilled(existing.get(place.getId()))) {
                 continue;
             }
             try {
@@ -99,11 +99,12 @@ public class PlaceDetailBackfillService {
     private int backfillAccommodations() {
         List<HospitalAccommodation> candidates = hospitalAccommodationRepository
                 .findByPlaceTypeAndTourismContentIdIsNotNull(PlaceType.ACCOMMODATION);
-        Set<Long> done = alreadyFilled(PlaceType.ACCOMMODATION, candidates.stream().map(HospitalAccommodation::getId).toList());
+        Map<Long, PlaceDetail> existing =
+                existingDetails(PlaceType.ACCOMMODATION, candidates.stream().map(HospitalAccommodation::getId).toList());
 
         int filled = 0;
         for (HospitalAccommodation place : candidates) {
-            if (done.contains(place.getId())) {
+            if (isFilled(existing.get(place.getId()))) {
                 continue;
             }
             try {
@@ -130,15 +131,19 @@ public class PlaceDetailBackfillService {
 
     private int backfillAttractions() {
         List<Attraction> candidates = attractionRepository.findByTourismContentIdIsNotNull();
-        Set<Long> done = alreadyFilled(PlaceType.ATTRACTION, candidates.stream().map(Attraction::getId).toList());
+        Map<Long, PlaceDetail> existing =
+                existingDetails(PlaceType.ATTRACTION, candidates.stream().map(Attraction::getId).toList());
 
         int filled = 0;
         for (Attraction attraction : candidates) {
-            if (done.contains(attraction.getId())) {
+            PlaceDetail existingDetail = existing.get(attraction.getId());
+            if (isFilled(existingDetail)) {
                 continue;
             }
             try {
-                TourApiDetailService.Detail detail = tourApiDetailService.fetchAttractionDetail(attraction.getTourismContentId());
+                Integer contentTypeId = existingDetail != null ? existingDetail.getContentTypeId() : null;
+                TourApiDetailService.Detail detail =
+                        tourApiDetailService.fetchAttractionDetail(attraction.getTourismContentId(), contentTypeId);
                 if (detail == null) {
                     continue;
                 }
@@ -170,13 +175,21 @@ public class PlaceDetailBackfillService {
         return message != null && message.contains("LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR");
     }
 
-    private Set<Long> alreadyFilled(PlaceType placeType, List<Long> placeIds) {
+    /**
+     * 후보들의 기존 place_details 행을 배치로 한 번에 조회한다(건별 조회 시 N+1). 관광명소는
+     * contentTypeId만 기록되고 overview는 아직 없는 행(=AttractionSyncService가 새로 기록해둔
+     * 행)도 있을 수 있어서, "행이 있다"가 아니라 {@link #isFilled}로 완료 여부를 따로 판단한다.
+     */
+    private Map<Long, PlaceDetail> existingDetails(PlaceType placeType, List<Long> placeIds) {
         if (placeIds.isEmpty()) {
-            return Set.of();
+            return Map.of();
         }
         return placeDetailRepository.findByPlaceTypeInAndPlaceIdIn(List.of(placeType), placeIds).stream()
-                .map(PlaceDetail::getPlaceId)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toMap(PlaceDetail::getPlaceId, d -> d));
+    }
+
+    private boolean isFilled(PlaceDetail detail) {
+        return detail != null && detail.isFilled();
     }
 
     private Map<String, String> buildHospitalExtraInfo(MedicalTourismDetail detail) {

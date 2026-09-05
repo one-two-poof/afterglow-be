@@ -1,7 +1,8 @@
 # 장소 상세정보(overview/운영정보) 확장 — 실행 계획
 
-> ✅ 구현 완료. 최종 결과/응답 형태는 `docs/place-detail-page-guide.md` 7절 참고. 이 문서는 설계
-> 배경(왜 이렇게 나눴는지, 관광명소 extra_info를 왜 뺐는지)을 남겨두는 용도로 유지한다.
+> ✅ 구현 완료(phase 1: 2026-09-05, phase 2/관광명소 운영정보: 2026-09-06). 최종 결과/응답 형태는
+> `docs/place-detail-page-guide.md` 7절 참고. 이 문서는 설계 배경(왜 이렇게 나눴는지, contentTypeId
+> 문제를 어떻게 풀었는지)을 남겨두는 용도로 유지한다.
 
 ## 목표
 
@@ -20,14 +21,15 @@
   프론트/백엔드 모두 이 케이스를 "정보 없음"으로 정상 처리해야 한다.
 - 병원은 `HospitalSyncService`가 채우는 `tourism_content_id`가 **의료관광 API**(`MdclTursmService`)
   contentId이고, 숙소/관광명소는 **TourAPI KorService2** contentId다 — 서로 다른 API를 호출해야 한다.
-- ⚠️ **관광명소(ATTRACTION)의 제약**: TourAPI 상세 조회(`detailIntro2`)는 `contentTypeId`(12=관광지/
-  14=문화시설/38=쇼핑)를 파라미터로 요구하는데, `Attraction` 엔티티엔 이 값이 저장돼 있지 않다
-  (`AttractionSyncService`의 `CategoryConfig.contentTypeId()`는 동기화 중에만 쓰이는 휘발성 값).
-  기존 테이블을 건드리지 않기로 했으므로 이 값을 새로 영속화할 수 없다 — 그래서 관광명소는
-  `contentTypeId`가 필요 없는 `detailCommon2`(overview)/`detailImage2`(이미지)만 받고,
-  `detailIntro2`(이용시간/휴무일 등 타입별 운영정보)는 **범위에서 제외**한다. 병원은 의료관광
-  상세 API 자체가 contentTypeId 구분이 없어서 문제 없고, 숙소는 `contentTypeId=32` 고정이라
-  문제 없다 — 애매한 건 관광명소뿐이다.
+- ⚠️→✅ **관광명소(ATTRACTION)의 제약(해결됨)**: TourAPI 상세 조회(`detailIntro2`)는
+  `contentTypeId`(12=관광지/14=문화시설/38=쇼핑)를 파라미터로 요구하는데, `Attraction` 엔티티엔
+  이 값이 저장돼 있지 않다(`AttractionSyncService`의 `CategoryConfig.contentTypeId()`는 동기화
+  중에만 쓰이는 휘발성 값). `attractions` 테이블은 안 건드리기로 했으므로, 대신 **`place_details`
+  에 `content_type_id` 컬럼을 추가**하고 `AttractionSyncService`가 매 동기화 때 이미 알고 있는
+  값을 그대로 적어두게 했다(추가 API 호출 없음, write-once). 이 값이 아직 없는 행(과거에 동기화된
+  뒤 재동기화가 안 지나간 행)은 `overview`/`images`만 받고 `extraInfo`는 다음 동기화 이후로 미룬다.
+  병원은 의료관광 상세 API 자체가 contentTypeId 구분이 없어서 애초에 문제 없었고, 숙소는
+  `contentTypeId=32` 고정이라 문제 없었다.
 
 ## 1. 새 테이블: `place_details`
 
@@ -82,13 +84,14 @@ place_details(
 | `extra_info` (JSON) | `{ checkinTime, checkoutTime, roomCount, subFacility, parking, cooking, pickup, reservationUrl, scale }` (`detailIntro2`, contentTypeId=32 필드셋) |
 | `source` | `"TOURAPI"` |
 
-### 관광명소(ATTRACTION) — 신규, **0절의 제약으로 overview/images만**
+### 관광명소(ATTRACTION) — 신규, contentTypeId를 아는 행만 `extra_info`까지
 
 | `place_details` 필드 | 출처 |
 |---|---|
 | `overview` | `detailCommon2.overview` |
 | `images` | `detailImage2` 응답 목록을 `\|`로 join |
-| `extra_info` | null (phase 1에서 제외 — 0절 참고) |
+| `content_type_id` | `AttractionSyncService`가 동기화 중 기록(`CategoryConfig.contentTypeId()`, 12/14/38) |
+| `extra_info` (JSON) | `content_type_id`가 있을 때만 `detailIntro2`로 채움, 없으면 null. 12(관광지)=`{ useTime, restDate, parking, babyCarriage, pet, expGuide, infoCenter }` / 14(문화시설)=`{ useFee, useTime, restDate, spendTime, discountInfo, parking, infoCenter }` / 38(쇼핑)=`{ openTime, restDate, saleItem, parking, infoCenter }` |
 | `source` | `"TOURAPI"` |
 
 ## 3. 수집 방식 — 별도 백필 스케줄러 (기존 3개 동기화 서비스는 안 건드림)
@@ -160,9 +163,12 @@ Map<String, String> extraInfo   // DB의 JSON 문자열을 응답 시점에 파�
 
 ## 7. 다음 단계로 미룬 것 (이번 범위 아님)
 
-- 관광명소 `extra_info`(이용시간/휴무일 등) — `contentTypeId`를 어떻게 안전하게 확보할지 정해야
-  가능(예: `attractions`에 컬럼 추가 — 이번엔 기존 테이블 안 건드리기로 했으므로 보류, 또는
-  `primary_type_name`→`contentTypeId` 역매핑 휴리스틱 — 오분류 위험 있어서 보류).
+- ~~관광명소 `extra_info`(이용시간/휴무일 등)~~ → **2026-09-06 phase 2로 구현 완료.** 휴리스틱
+  역매핑 대신, `AttractionSyncService`가 동기화 중 이미 알고 있는 `contentTypeId`(12/14/38,
+  `CategoryConfig`)를 그 자리에서 `place_details.content_type_id`에 적어두는 방식으로 풀었다 —
+  추가 API 호출 없음, `attractions` 테이블도 안 건드림(원래 원칙 유지). write-once라 과거에 이미
+  동기화된 행은 다음 재동기화 사이클을 한 번 지나야 채워진다. 상세 필드 매핑은
+  `TourApiDetailService.fetchAttractionIntro()`와 `place-detail-page-guide.md` 7절 참고.
 - `overview`/`extra_info`의 ja/en 번역 — `place_translations`처럼 로케일별로 분리할지는 실제
   수요 보고 판단.
 - 관리자 페이지에서 `place_details` 수동 수정(override) UI — 엔티티엔 `overridden` 필드를 이미
