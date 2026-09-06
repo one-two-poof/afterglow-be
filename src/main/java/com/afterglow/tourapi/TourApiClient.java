@@ -50,6 +50,10 @@ public class TourApiClient {
     /**
      * 공통 상세정보 조회 (detailCommon2). overview(소개글)를 포함한 공통 필드를 준다 —
      * contentTypeId와 무관하게 항상 같은 형태라 관광명소(12/14/38 어느 쪽인지 몰라도) 호출 가능.
+     *
+     * <p>⚠️ {@code defaultYN}/{@code overviewYN}/{@code firstImageYN} 등 "YN" 플래그 파라미터는
+     * 넣으면 {@code INVALID_REQUEST_PARAMETER_ERROR}를 낸다(2026-09-06 실제 API로 확인) — 문서화된
+     * 것과 달리 이 서비스키/버전에선 안 받는 파라미터다. 절대 다시 추가하지 말 것.
      */
     public JsonNode fetchDetailCommon2(String contentId) {
         requireConfigured();
@@ -63,13 +67,6 @@ public class TourApiClient {
                         .queryParam("MobileOS", "ETC")
                         .queryParam("MobileApp", properties.mobileApp())
                         .queryParam("contentId", contentId)
-                        .queryParam("defaultYN", "Y")
-                        .queryParam("overviewYN", "Y")
-                        .queryParam("firstImageYN", "N")
-                        .queryParam("areacodeYN", "N")
-                        .queryParam("catcodeYN", "N")
-                        .queryParam("addrinfoYN", "N")
-                        .queryParam("mapinfoYN", "N")
                         .queryParam("_type", "json")
                         .build())
                 .retrieve()
@@ -77,7 +74,9 @@ public class TourApiClient {
                 .bodyToMono(String.class)
                 .block();
 
-        return parse(raw);
+        JsonNode root = parse(raw);
+        verifyOk(root);
+        return root;
     }
 
     /**
@@ -106,10 +105,16 @@ public class TourApiClient {
                 .bodyToMono(String.class)
                 .block();
 
-        return parse(raw);
+        JsonNode root = parse(raw);
+        verifyOk(root);
+        return root;
     }
 
-    /** 이미지 목록 조회 (detailImage2). contentTypeId와 무관하게 contentId만으로 조회된다. */
+    /**
+     * 이미지 목록 조회 (detailImage2). contentTypeId와 무관하게 contentId만으로 조회된다.
+     * ⚠️ {@code imageYN}/{@code subImageYN}도 detailCommon2의 YN 플래그와 같은 이유로 뺐다
+     * (2026-09-06 실제 API로 확인, {@code INVALID_REQUEST_PARAMETER_ERROR}).
+     */
     public JsonNode fetchDetailImage2(String contentId) {
         requireConfigured();
 
@@ -122,8 +127,6 @@ public class TourApiClient {
                         .queryParam("MobileOS", "ETC")
                         .queryParam("MobileApp", properties.mobileApp())
                         .queryParam("contentId", contentId)
-                        .queryParam("imageYN", "Y")
-                        .queryParam("subImageYN", "Y")
                         .queryParam("_type", "json")
                         .build())
                 .retrieve()
@@ -131,7 +134,28 @@ public class TourApiClient {
                 .bodyToMono(String.class)
                 .block();
 
-        return parse(raw);
+        JsonNode root = parse(raw);
+        verifyOk(root);
+        return root;
+    }
+
+    /**
+     * 성공 응답은 {@code {"response":{"header":{"resultCode":"0000",...}}}} 형태지만, 파라미터
+     * 오류 등은 래퍼 없이 최상위에 {@code {"resultCode":"10","resultMsg":"..."}}로 바로 온다
+     * (2026-09-06 실제 API로 확인) — 이 형태를 못 잡으면 그냥 "결과 없음"으로 조용히 넘어가서
+     * 실제로는 매 요청이 실패하는데 로그에 아무것도 안 남는 문제가 생긴다.
+     */
+    private void verifyOk(JsonNode root) {
+        JsonNode flatCode = root.path("resultCode");
+        if (flatCode.isTextual() && !"0000".equals(flatCode.asText())) {
+            throw new TourApiException(
+                    "공공데이터 API 오류 [" + flatCode.asText() + "] " + root.path("resultMsg").asText(""));
+        }
+        JsonNode header = root.path("response").path("header");
+        String code = header.path("resultCode").asText("");
+        if (!code.isEmpty() && !"0000".equals(code)) {
+            throw new TourApiException("공공데이터 API 오류 [" + code + "] " + header.path("resultMsg").asText("UNKNOWN"));
+        }
     }
 
     /**

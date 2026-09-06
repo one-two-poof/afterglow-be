@@ -91,7 +91,7 @@ public class TourApiDetailService {
         putIfPresent(extraInfo, "cooking", item, "chkcooking");
         putIfPresent(extraInfo, "pickup", item, "pickup");
         putIfPresent(extraInfo, "reservationUrl", item, "reservationurl");
-        putIfPresent(extraInfo, "scale", item, "scale");
+        putIfPresent(extraInfo, "scale", item, "scalelodging");
         return extraInfo.isEmpty() ? null : extraInfo;
     }
 
